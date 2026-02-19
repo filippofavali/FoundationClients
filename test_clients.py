@@ -21,13 +21,13 @@ except ImportError:
 
 # Mock generic google module for direct imports in clients
 try:
-    import google.generativeai
+    import google.genai
 except ImportError:
     mock_google = MagicMock()
-    mock_genai = MagicMock()
-    mock_google.generativeai = mock_genai
+    mock_genai_pkg = MagicMock()
+    mock_google.genai = mock_genai_pkg
     sys.modules["google"] = mock_google
-    sys.modules["google.generativeai"] = mock_genai
+    sys.modules["google.genai"] = mock_genai_pkg
 
 # Now import the module to test
 import base_client
@@ -54,8 +54,7 @@ class TestFoundationClients(unittest.TestCase):
         self.mock_openai_instance = self.mock_openai.return_value
         self.mock_anthropic_instance = self.mock_anthropic.return_value
         # Gemini
-        self.mock_model = MagicMock()
-        self.mock_genai.GenerativeModel.return_value = self.mock_model
+        self.mock_genai_client = self.mock_genai.Client.return_value
 
         # Ensure clients are initialized with mocks even if imports failed in real module
         base_client.Groq = self.mock_groq

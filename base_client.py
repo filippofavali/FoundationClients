@@ -22,8 +22,8 @@ except ImportError:
     Anthropic = None
 
 try:
-    import google.generativeai as genai
-    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+    from google import genai
+    from google.genai import types
 except ImportError:
     genai = None
 
@@ -129,10 +129,9 @@ class BaseFoundationClient(ABC):
             if not Anthropic: raise ImportError("Anthropic SDK not installed.")
             return Anthropic(api_key=self.api_key)
         elif self.provider == "gemini":
-            if not genai: raise ImportError("Google Generative AI SDK not installed.")
-            genai.configure(api_key=self.api_key)
-            # Gemini client is the generative model object itself usually, but we keep it flexible
-            return genai.GenerativeModel(self.model_name)
+            if not genai: raise ImportError("Google GenAI SDK not installed.")
+            # Initialize Client directly
+            return genai.Client(api_key=self.api_key)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 

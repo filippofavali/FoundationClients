@@ -1,6 +1,6 @@
 from base_client import BaseFoundationClient
 try:
-    import google.generativeai as genai
+    from google import genai
 except ImportError:
     genai = None
 
@@ -69,14 +69,23 @@ class LLMClient(BaseFoundationClient):
             return content
 
         elif self.provider == "gemini":
-            config = genai.types.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                top_p=top_p,
-            )
+            # google-genai SDK
+            # Unified generate_content on client
             
-            complete_prompt = f"System: {system_message}\nUser: {user_message}"
-            response = self.client.generate_content(complete_prompt, generation_config=config)
+            # Construct config
+            config = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens,
+                "top_p": top_p,
+            }
+            if system_message:
+                config["system_instruction"] = system_message
+
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=user_message,
+                config=config
+            )
             
             usage = response.usage_metadata
             self._update_metrics(usage.prompt_token_count, usage.candidates_token_count)

@@ -14,7 +14,7 @@ except ImportError:
     Image = None
 
 try:
-    import google.generativeai as genai
+    from google import genai
 except ImportError:
     genai = None
 
@@ -130,12 +130,16 @@ class VLMClient(BaseFoundationClient):
             return response.choices[0].message.content
 
         elif self.provider == "gemini":
-            # Gemini supports PIL images directly
+            # Gemini supports PIL images directly or bytes
             if isinstance(image, str):
                 if image.startswith("http"):
                     # quick download for gemini
-                    response = requests.get(image)
-                    img_data = Image.open(BytesIO(response.content))
+                    # genai SDK might handle urls if passed as Part/URI, but keeping it simple with requests
+                    if requests:
+                        response = requests.get(image)
+                        img_data = Image.open(BytesIO(response.content))
+                    else:
+                        raise ImportError("Requests not installed for URL handling")
                 elif os.path.isfile(image):
                     img_data = Image.open(image)
                 else: 
@@ -144,12 +148,16 @@ class VLMClient(BaseFoundationClient):
             else:
                 img_data = image
 
-            config = genai.types.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens
-            )
+            config = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens
+            }
             
-            response = self.client.generate_content([text_prompt, img_data], generation_config=config)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=[text_prompt, img_data],
+                config=config
+            )
             usage = response.usage_metadata
             self._update_metrics(usage.prompt_token_count, usage.candidates_token_count)
             return response.text

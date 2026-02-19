@@ -1,7 +1,7 @@
 groq
 openai
 anthropic
-google-generativeai
+google-genai
 pandas
 python-dotenv
 Pillow
