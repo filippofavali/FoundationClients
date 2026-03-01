@@ -30,19 +30,19 @@ except ImportError:
     sys.modules["google.genai"] = mock_genai_pkg
 
 # Now import the module to test
-import base_client
-from llm_client import LLMClient
-from vlm_client import VLMClient
-from base_client import ModelRegistry
+from . import base_client
+from .llm_client import LLMClient
+from .vlm_client import VLMClient
+from .base_client import ModelRegistry
 
 class TestFoundationClients(unittest.TestCase):
 
     def setUp(self):
         # Patch the SDK imports in the module
-        self.groq_patcher = patch('base_client.Groq')
-        self.openai_patcher = patch('base_client.OpenAI')
-        self.anthropic_patcher = patch('base_client.Anthropic')
-        self.genai_patcher = patch('base_client.genai')
+        self.groq_patcher = patch('src.base_client.Groq')
+        self.openai_patcher = patch('src.base_client.OpenAI')
+        self.anthropic_patcher = patch('src.base_client.Anthropic')
+        self.genai_patcher = patch('src.base_client.genai')
 
         self.mock_groq = self.groq_patcher.start()
         self.mock_openai = self.openai_patcher.start()

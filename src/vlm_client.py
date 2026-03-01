@@ -18,7 +18,7 @@ try:
 except ImportError:
     genai = None
 
-from base_client import BaseFoundationClient
+from .base_client import BaseFoundationClient
 
 class VLMClient(BaseFoundationClient):
     """

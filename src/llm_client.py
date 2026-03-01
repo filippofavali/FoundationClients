@@ -1,4 +1,4 @@
-from base_client import BaseFoundationClient
+from .base_client import BaseFoundationClient
 try:
     from google import genai
 except ImportError:
