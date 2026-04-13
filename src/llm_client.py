@@ -67,6 +67,9 @@ class LLMClient(BaseFoundationClient):
                 return content
 
         elif self.provider == "anthropic":
+
+            raise NotImplementedError("LLMClient does not support Anthropic yet due to differences in system message handling.")
+        
             # Anthropic does not support system message in the messages list in the same way (it's a top level param)
             response = self.client.messages.create(
                 model=self.model_name,
@@ -82,6 +85,8 @@ class LLMClient(BaseFoundationClient):
             return content
 
         elif self.provider == "gemini":
+
+            raise NotImplementedError("LLMClient does not support Gemini yet due to differences in system message handling.")
 
             config = {
                 "temperature": temperature,

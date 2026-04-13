@@ -69,6 +69,9 @@ class VLMClient(BaseFoundationClient):
             return response.choices[0].message.content
 
         elif self.provider == "anthropic":
+
+            raise NotImplementedError("VLMClient does not support Anthropic yet due to differences in image handling and API structure.")   
+        
             base64_image = self._encode_image(image)
             # Anthropic needs media_type, assuming jpeg for simplicity or detect
             media_type = "image/jpeg"
@@ -141,6 +144,9 @@ class VLMClient(BaseFoundationClient):
             return response.choices[0].message.content
 
         elif self.provider == "gemini":
+
+            raise NotImplementedError("VLMClient does not support Gemini yet due to differences in image handling and API structure.")
+        
             # Gemini supports PIL images directly or bytes
             if isinstance(image, str):
                 if image.startswith("http"):
