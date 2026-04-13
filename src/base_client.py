@@ -39,15 +39,13 @@ class ModelRegistry:
     GROQ_MODELS = {
         "llama3.1-8b": "llama-3.1-8b-instant",
         "llama3.3-70b": "llama-3.3-70b-versatile",
-        "llama-guard-3-8b": "llama-guard-3-8b",
-        "llama3-70b": "llama3-70b-8192",
-        "llama3-8b": "llama3-8b-8192",
-        "mixtral-8x7b": "mixtral-8x7b-32768",
-        "gemma-7b": "gemma-7b-it",
-        "gemma2-9b": "gemma2-9b-it",
-        # Vision models on Groq
-        "llama-3.2-11b-vision": "llama-3.2-11b-vision-preview",
-        "llama-3.2-90b-vision": "llama-3.2-90b-vision-preview",
+        "llama4-maverick-17b": "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "moonshotai-kimik2-32b": "moonshotai/kimi-k2-instruct-0905",
+        "qwen3-32b": "qwen/qwen3-32b",
+        "openai-oss-20b": "openai/gpt-oss-20b",
+        "openai-oss-120b": "openai/gpt-oss-120b",
+        # vision enabled models
+        "llama4-scout-17b": "meta-llama/llama-4-scout-17b-16e-instruct",
     }
 
     # OpenAI Models
@@ -94,16 +92,12 @@ class BaseFoundationClient(ABC):
     """Base class for all foundation model clients."""
     
     def __init__(self, **model_parameters):
-        self.model_parameters = model_parameters
         
-        # Parse model_name "provider/model" or just "model" (defaulting to a provider if logic allows, but explicit is better)
+        self.model_parameters = model_parameters
         full_model_name = model_parameters.get("model_name", "")
         if "/" in full_model_name:
             self.provider, self.raw_model_name = full_model_name.split("/", 1)
         else:
-            # Fallback or error. For now, let's assume if no slash, it might be a direct ID, 
-            # but user requirement implies provider/model pattern.
-            # We will raise error if provider is not clear, but let's try to infer or just fail.
             raise ValueError(f"Model name '{full_model_name}' must be in format 'provider/model_name'")
 
         self.model_name = ModelRegistry.get_model_id(self.provider, self.raw_model_name)

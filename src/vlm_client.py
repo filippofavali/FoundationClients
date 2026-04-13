@@ -1,29 +1,23 @@
-import os
-import base64
+import os, sys, base64, requests, base64
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from io import BytesIO
 from typing import Union
-
-try:
-    import requests
-except ImportError:
-    requests = None
-
-try:
-    from PIL import Image
-except ImportError:
-    Image = None
-
-try:
+from PIL import Image
+try:    
     from google import genai
 except ImportError:
     genai = None
-
-from .base_client import BaseFoundationClient
+from base_client import BaseFoundationClient
 
 class VLMClient(BaseFoundationClient):
     """
     Client for Vision-Language tasks.
     """
+
+    def __init__(self, **model_parameters):
+        super().__init__(**model_parameters)
     
     def _encode_image(self, image_source: Union[str, bytes, Image.Image]) -> str:
         """Encodes image to base64 string."""
@@ -43,12 +37,14 @@ class VLMClient(BaseFoundationClient):
         return ""
 
     def __call__(self, text_prompt: str, image: Union[str, Image.Image], **kwargs) -> str:
+        """Sends a vision-language request to the model."""
+        
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
-        
+        top_p = kwargs.get("top_p", self.top_p)
+
         if self.provider == "openai":
             base64_image = self._encode_image(image)
-            
             image_content = {}
             if isinstance(image, str) and image.startswith("http"):
                  image_content = {"type": "image_url", "image_url": {"url": image}}
@@ -102,14 +98,25 @@ class VLMClient(BaseFoundationClient):
             return response.content[0].text
             
         elif self.provider == "groq":
-             # Similar to OpenAI for Llama 3.2 vision models
+            # Groq VLM accepts either remote URLs or inline base64 image data URLs.
             base64_image = self._encode_image(image)
-            
-            image_content = {}
+
             if isinstance(image, str) and image.startswith("http"):
-                 image_content = {"type": "image_url", "image_url": {"url": image}}
+                image_content = {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image
+                    }
+                }
+            elif isinstance(image, str) and os.path.isfile(image):
+                image_content = {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}"
+                    }
+                }
             else:
-                 image_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                raise ValueError("Groq provider currently only supports image URLs, local image files, PIL images, or base64-encoded image strings.")
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -117,13 +124,17 @@ class VLMClient(BaseFoundationClient):
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": text_prompt},
+                            {
+                                "type": "text",
+                                "text": text_prompt
+                            },
                             image_content,
-                        ],
+                        ]
                     }
                 ],
-                max_tokens=max_tokens,
+                max_completion_tokens=max_tokens,
                 temperature=temperature,
+                top_p=top_p
             )
             if hasattr(response, 'usage'):
                 self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
@@ -164,3 +175,19 @@ class VLMClient(BaseFoundationClient):
 
         else:
              raise NotImplementedError(f"Provider {self.provider} not supported for Vision.")
+
+
+if __name__ == "__main__":
+
+    from src.test.test_client import TestVLMClient
+
+    model_parameters = {
+        "model_name": "groq/llama4-scout-17b",
+        'temperature': 0.5,
+        'max_tokens': 512,
+        'top_p': 0.9
+    }
+
+    vlm_client = TestVLMClient(**model_parameters)
+    vlm_client.test_response_with_url_image()
+    vlm_client.test_response_with_local_image()

@@ -1,4 +1,8 @@
-from .base_client import BaseFoundationClient
+import os, sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from base_client import BaseFoundationClient
 try:
     from google import genai
 except ImportError:
@@ -8,6 +12,9 @@ class LLMClient(BaseFoundationClient):
     """
     Client for Text-to-Text interaction.
     """
+
+    def __init__(self, **model_parameters):
+        super().__init__(**model_parameters)
     
     def __call__(self, user_message: str, system_message: str = "You are a helpful assistant.", **kwargs) -> str:
         # Merge call-specific overrides
@@ -18,8 +25,14 @@ class LLMClient(BaseFoundationClient):
         
         if self.provider in ["groq", "openai"]:
             messages = [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
+                {
+                    "role": "system", 
+                    "content": system_message
+                },
+                {
+                    "role": "user",
+                    "content": user_message
+                }
             ]
             
             # OpenAI/Groq parameters
@@ -69,10 +82,7 @@ class LLMClient(BaseFoundationClient):
             return content
 
         elif self.provider == "gemini":
-            # google-genai SDK
-            # Unified generate_content on client
-            
-            # Construct config
+
             config = {
                 "temperature": temperature,
                 "max_output_tokens": max_tokens,
@@ -94,3 +104,21 @@ class LLMClient(BaseFoundationClient):
 
         else:
             raise NotImplementedError(f"Provider {self.provider} not implemented.")
+
+
+if __name__ == "__main__":
+
+    from src.test.test_client import TestLLMClient
+
+    model_parameters = {
+        "model_name": "groq/openai-oss-20b",
+        'temperature': 1.5,
+        'max_tokens': 2048,
+        'top_p': 0.9
+    }
+
+    llm_client = TestLLMClient(
+        **model_parameters
+    )
+
+    llm_client.test_response()
