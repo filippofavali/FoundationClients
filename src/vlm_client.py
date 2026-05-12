@@ -3,8 +3,8 @@ import os, sys, base64, requests, base64
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from io import BytesIO
-from typing import Union
-from PIL import Image
+from typing import Union, List
+from PIL import Image, ImageDraw
 try:    
     from google import genai
 except ImportError:
@@ -18,7 +18,7 @@ class VLMClient(BaseFoundationClient):
 
     def __init__(self, **model_parameters):
         super().__init__(**model_parameters)
-    
+
     def _encode_image(self, image_source: Union[str, bytes, Image.Image]) -> str:
         """Encodes image to base64 string."""
         if isinstance(image_source, Image.Image):
@@ -36,9 +36,34 @@ class VLMClient(BaseFoundationClient):
                  return image_source
         return ""
 
+    def _draw_bbs(self, bbs: list, image: Union[str, Image.Image], print: bool = False):
+        if isinstance(image, str):
+            image = Image.open(image)
+
+        image = image.copy()
+        draw = ImageDraw.Draw(image)
+
+        for bb in bbs:
+            coordinates = bb.get("coordinates", bb)
+            x_min = coordinates["x_min"]
+            y_min = coordinates["y_min"]
+            x_max = coordinates["x_max"]
+            y_max = coordinates["y_max"]
+            label = bb.get("label", "")
+
+            draw.rectangle([x_min, y_min, x_max, y_max], outline="red", width=3)
+            if label:
+                draw.text((x_min, max(0, y_min - 12)), label, fill="red")
+
+        if print:
+            image.show()
+            return
+
+        return image
+
     def __call__(self, text_prompt: str, image: Union[str, Image.Image], **kwargs) -> str:
         """Sends a vision-language request to the model."""
-        
+        force_json_response = kwargs.get("force_json_response", False)
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -189,11 +214,11 @@ if __name__ == "__main__":
 
     model_parameters = {
         "model_name": "groq/llama4-scout-17b",
-        'temperature': 0.5,
+        'temperature': 0.0,
         'max_tokens': 512,
-        'top_p': 0.9
+        'top_p': 1.0
     }
 
     vlm_client = TestVLMClient(**model_parameters)
     vlm_client.test_response_with_url_image()
-    vlm_client.test_response_with_local_image()
+    vlm_client.test_response_with_local_image(image_path='/home/agents/ProjectsWorkspace/FoundationClients/src/test/test_silvio.jpg')
