@@ -48,7 +48,7 @@ if __name__ == "__main__":
             model_parameters = test_groq_vlm()
              
         vlm = VLMClient(**model_parameters)
-        task = 'Find the alien in the image. If there are specific known, please label them with their names.'
+        task = 'Find all the faces in the image. If there are specific known, please label them with their names.'
         
         bb_prompt = """
         Task: {task}.
