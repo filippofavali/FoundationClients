@@ -48,6 +48,15 @@ class ModelRegistry:
         "llama4-scout-17b": "meta-llama/llama-4-scout-17b-16e-instruct",
     }
 
+    # Nebius Models
+    NEBIUS_MODELS = {
+        'nvidia-nemotron-30b': "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        'nvidia-nemotron-120b': "nvidia/nemotron-3-super-120b-a12b",
+        'kimi-k2.6': "moonshotai/Kimi-K2.6",
+        'qwen3-embedding-8b': 'Qwen/Qwen3-Embedding-8B',
+        'qwen3-2.5-70b': 'Qwen/Qwen2.5-VL-72B-Instruct',
+    }
+
     # OpenAI Models
     OPENAI_MODELS = {
         "gpt-4o": "gpt-4o",
@@ -80,6 +89,8 @@ class ModelRegistry:
             return cls.GROQ_MODELS.get(model_name, model_name)
         elif provider == "openai":
             return cls.OPENAI_MODELS.get(model_name, model_name)
+        elif provider == "nebius":
+            return cls.NEBIUS_MODELS.get(model_name, model_name)
         elif provider == "anthropic":
             return cls.ANTHROPIC_MODELS.get(model_name, model_name)
         elif provider == "gemini":
@@ -108,6 +119,7 @@ class BaseFoundationClient(ABC):
         self.stream = model_parameters.get("stream", False)
         
         self.api_key = model_parameters.get("api_key", os.getenv(f"{self.provider.upper()}_API_KEY"))
+        self.base_url = model_parameters.get("base_url", os.getenv(f"{self.provider.upper()}_BASE_URL"))
         
         self.client = self._initialize_client()
         self.usage_metrics = None
@@ -119,6 +131,10 @@ class BaseFoundationClient(ABC):
         elif self.provider == "openai":
             if not OpenAI: raise ImportError("OpenAI SDK not installed.")
             return OpenAI(api_key=self.api_key)
+        elif self.provider == "nebius":
+            if not OpenAI: raise ImportError("OpenAI SDK not installed.")
+            base_url = self.base_url or "https://api.tokenfactory.nebius.com/v1/"
+            return OpenAI(api_key=self.api_key, base_url=base_url)
         elif self.provider == "anthropic":
             if not Anthropic: raise ImportError("Anthropic SDK not installed.")
             return Anthropic(api_key=self.api_key)
