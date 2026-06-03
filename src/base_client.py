@@ -3,27 +3,27 @@ from typing import List, Dict, Union, Optional, Any
 from abc import ABC, abstractmethod
 
 import pandas as pd
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore[reportMissingImports]
 
 # Import provider SDKs
 try:
-    from groq import Groq
+    from groq import Groq  # type: ignore[reportMissingImports]
 except ImportError:
     Groq = None
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI  # type: ignore[reportMissingImports]
 except ImportError:
     OpenAI = None
 
 try:
-    from anthropic import Anthropic
+    from anthropic import Anthropic  # type: ignore[reportMissingImports]
 except ImportError:
     Anthropic = None
 
 try:
     from google import genai
-    from google.genai import types
+    from google.genai import types  # type: ignore[reportMissingImports]
 except ImportError:
     genai = None
 
@@ -50,10 +50,12 @@ class ModelRegistry:
 
     # Nebius Models
     NEBIUS_MODELS = {
+        'google-gemma-27b': 'google/gemma-3-27b-it',
         'nvidia-nemotron-30b': "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
         'nvidia-nemotron-120b': "nvidia/nemotron-3-super-120b-a12b",
         'kimi-k2.6': "moonshotai/Kimi-K2.6",
         'qwen3-embedding-8b': 'Qwen/Qwen3-Embedding-8B',
+        # vision enabled models
         'qwen3-2.5-70b': 'Qwen/Qwen2.5-VL-72B-Instruct',
     }
 

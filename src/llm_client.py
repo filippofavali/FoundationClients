@@ -12,6 +12,7 @@ try:
 except ImportError:
     genai = None
 
+
 class LLMClient(BaseFoundationClient):
     """
     Client for Text-to-Text interaction.
@@ -24,152 +25,209 @@ class LLMClient(BaseFoundationClient):
         if name in kwargs:
             return kwargs[name]
         return self.model_parameters.get(name, default)
-    
-    def __call__(self, user_message: Optional[str] = None, system_message: str = "You are a helpful assistant.", **kwargs) -> str:
-        # Merge call-specific overrides
+
+    def _build_messages(self, user_message: Optional[str], system_message: str, messages: Optional[list]) -> list:
+        if messages is not None:
+            return messages
+
+        built_messages = []
+        if system_message:
+            built_messages.append({"role": "system", "content": system_message})
+        if user_message is not None:
+            built_messages.append({"role": "user", "content": user_message})
+        return built_messages
+
+    def _handle_stream(self, response):
+        full_response = ""
+        for chunk in response:
+            if chunk.choices[0].delta.content:
+                content = chunk.choices[0].delta.content
+                full_response += content
+                print(content, end="", flush=True)
+        print()
+        return full_response
+
+    def _update_from_openai_usage(self, response):
+        if hasattr(response, "usage"):
+            self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
+
+    def _call_groq(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
         stream = kwargs.get("stream", self.stream)
         full_content = kwargs.get("full_content", False)
+        messages = self._build_messages(user_message, system_message, kwargs.get("messages"))
+
+        if not messages:
+            raise ValueError("Either user_message or messages must be provided.")
+
+        params = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": stream,
+            "max_completion_tokens": max_tokens,
+        }
+        if force_json:
+            params["response_format"] = {"type": "json_object"}
+
+        response = self.client.chat.completions.create(**params)
         
-        if self.provider in ["groq", "openai", "nebius"]:
+        if stream:
+            return self._handle_stream(response)
+        self._update_from_openai_usage(response)
+        if full_content:
+            return response
+        return response.choices[0].message.content
 
-            messages = kwargs.get("messages")
-            if messages is None:
-                messages = []
-                if system_message:
-                    messages.append({
-                        "role": "system",
-                        "content": system_message
-                    })
-                if user_message is not None:
-                    messages.append({
-                        "role": "user",
-                        "content": user_message
-                    })
-            if not messages:
-                raise ValueError("Either user_message or messages must be provided.")
-            
-            # OpenAI-compatible chat completion parameters.
-            params = {
-                "model": self.model_name,
-                "messages": messages,
-                "temperature": temperature,
-                "top_p": top_p,
-                "stream": stream,
-            }
-            
-            if self.provider == "groq":
-                 params["max_completion_tokens"] = max_tokens
-            else:
-                 params["max_tokens"] = max_tokens
+    def _call_openai(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+        temperature = kwargs.get("temperature", self.temperature)
+        max_tokens = kwargs.get("max_tokens", self.max_tokens)
+        top_p = kwargs.get("top_p", self.top_p)
+        stream = kwargs.get("stream", self.stream)
+        full_content = kwargs.get("full_content", False)
+        messages = self._build_messages(user_message, system_message, kwargs.get("messages"))
 
-            optional_params = [
-                "n",
-                "stream_options",
-                "stop",
-                "presence_penalty",
-                "frequency_penalty",
-                "logit_bias",
-                "logprobs",
-                "top_logprobs",
-                "user",
-                "response_format",
-            ]
-            for param_name in optional_params:
-                value = self._get_call_parameter(param_name, kwargs)
-                if value is not None:
-                    params[param_name] = value
+        if not messages:
+            raise ValueError("Either user_message or messages must be provided.")
 
-            extra_body = self._get_call_parameter("extra_body", kwargs)
-            guided_json = self._get_call_parameter("guided_json", kwargs)
-            top_k = self._get_call_parameter("top_k", kwargs)
-            if extra_body is not None:
-                extra_body = dict(extra_body)
-            elif guided_json is not None or top_k is not None:
-                extra_body = {}
-            if guided_json is not None:
-                extra_body["guided_json"] = guided_json
-            if top_k is not None:
-                extra_body["top_k"] = top_k
-            if extra_body is not None:
-                params["extra_body"] = extra_body
+        params = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": stream,
+            "max_tokens": max_tokens,
+        }
+        if force_json:
+            params["response_format"] = {"type": "json_object"}
 
-            response = self.client.chat.completions.create(**params)
-            
-            if stream:
-                full_response = ""
-                for chunk in response:
-                    if chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        full_response += content
-                        print(content, end="", flush=True)
-                print() # Newline
-                return full_response
-            
-            elif full_content:
-                if hasattr(response, 'usage'):
-                    self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
-                return response
-            
-            else:
-                content = response.choices[0].message.content
-                if hasattr(response, 'usage'):
-                    self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
-                return content
+        for param_name in [
+            "n",
+            "stream_options",
+            "stop",
+            "presence_penalty",
+            "frequency_penalty",
+            "logit_bias",
+            "logprobs",
+            "top_logprobs",
+            "user",
+            "response_format",
+        ]:
+            value = self._get_call_parameter(param_name, kwargs)
+            if value is not None:
+                params[param_name] = value
 
-        elif self.provider == "anthropic":
+        extra_body = self._get_call_parameter("extra_body", kwargs)
+        guided_json = self._get_call_parameter("guided_json", kwargs)
+        top_k = self._get_call_parameter("top_k", kwargs)
+        if extra_body is not None:
+            extra_body = dict(extra_body)
+        elif guided_json is not None or top_k is not None:
+            extra_body = {}
+        if guided_json is not None:
+            extra_body["guided_json"] = guided_json
+        if top_k is not None:
+            extra_body["top_k"] = top_k
+        if extra_body is not None:
+            params["extra_body"] = extra_body
 
-            raise NotImplementedError("LLMClient does not support Anthropic yet due to differences in system message handling.")
-        
-            # Anthropic does not support system message in the messages list in the same way (it's a top level param)
-            response = self.client.messages.create(
-                model=self.model_name,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system_message,
-                messages=[
-                    {"role": "user", "content": user_message}
-                ]
-            )
-            content = response.content[0].text
-            self._update_metrics(response.usage.input_tokens, response.usage.output_tokens)
-            return content
+        response = self.client.chat.completions.create(**params)
+        if stream:
+            return self._handle_stream(response)
+        self._update_from_openai_usage(response)
+        if full_content:
+            return response
+        return response.choices[0].message.content
 
-        elif self.provider == "gemini":
+    def _call_nebius(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+        temperature = kwargs.get("temperature", self.temperature)
+        max_tokens = kwargs.get("max_tokens", self.max_tokens)
+        top_p = kwargs.get("top_p", self.top_p)
+        stream = kwargs.get("stream", self.stream)
+        full_content = kwargs.get("full_content", False)
+        messages = self._build_messages(user_message, system_message, kwargs.get("messages"))
 
-            raise NotImplementedError("LLMClient does not support Gemini yet due to differences in system message handling.")
+        if not messages:
+            raise ValueError("Either user_message or messages must be provided.")
 
-            config = {
-                "temperature": temperature,
-                "max_output_tokens": max_tokens,
-                "top_p": top_p,
-            }
-            if system_message:
-                config["system_instruction"] = system_message
+        params = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": stream,
+            "max_tokens": max_tokens,
+        }
+        if force_json:
+            params["response_format"] = {"type": "json_object"}
 
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=user_message,
-                config=config
-            )
-            
-            usage = response.usage_metadata
-            self._update_metrics(usage.prompt_token_count, usage.candidates_token_count)
-            
-            return response.text
+        for param_name in [
+            "n",
+            "stream_options",
+            "stop",
+            "presence_penalty",
+            "frequency_penalty",
+            "logit_bias",
+            "logprobs",
+            "top_logprobs",
+            "user",
+            "response_format",
+        ]:
+            value = self._get_call_parameter(param_name, kwargs)
+            if value is not None:
+                params[param_name] = value
 
-        else:
-            raise NotImplementedError(f"Provider {self.provider} not implemented.")
+        extra_body = self._get_call_parameter("extra_body", kwargs)
+        guided_json = self._get_call_parameter("guided_json", kwargs)
+        top_k = self._get_call_parameter("top_k", kwargs)
+        if extra_body is not None:
+            extra_body = dict(extra_body)
+        elif guided_json is not None or top_k is not None:
+            extra_body = {}
+        if guided_json is not None:
+            extra_body["guided_json"] = guided_json
+        if top_k is not None:
+            extra_body["top_k"] = top_k
+        if extra_body is not None:
+            params["extra_body"] = extra_body
+
+        response = self.client.chat.completions.create(**params)
+        if stream:
+            return self._handle_stream(response)
+        self._update_from_openai_usage(response)
+        if full_content:
+            return response
+        return response.choices[0].message.content
+
+    def _call_anthropic(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+        raise NotImplementedError("LLMClient does not support Anthropic yet due to differences in system message handling.")
+
+    def _call_gemini(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+        raise NotImplementedError("LLMClient does not support Gemini yet due to differences in system message handling.")
+
+    def __call__(self, user_message: Optional[str] = None, system_message: str = "You are a helpful assistant.", force_json: bool = False, **kwargs) -> str:
+        if self.provider == "groq":
+            return self._call_groq(user_message, system_message, force_json, **kwargs)
+        if self.provider == "openai":
+            return self._call_openai(user_message, system_message, force_json, **kwargs)
+        if self.provider == "nebius":
+            return self._call_nebius(user_message, system_message, force_json, **kwargs)
+        if self.provider == "anthropic":
+            return self._call_anthropic(user_message, system_message, force_json, **kwargs)
+        if self.provider == "gemini":
+            return self._call_gemini(user_message, system_message, force_json, **kwargs)
+        raise NotImplementedError(f"Provider {self.provider} not implemented.")
 
 
 if __name__ == "__main__":
 
-    from src.test.test_client import TestLLMClient
+    from src.test.test_client import TestLLMClient  # type: ignore[reportMissingImports]
 
     model_parameters = {
-        "model_name": "groq/openai-oss-20b",
+        "model_name": "Nebius/openai-oss-20b",
         'temperature': 1.5,
         'max_tokens': 2048,
         'top_p': 0.9

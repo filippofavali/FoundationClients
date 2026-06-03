@@ -22,13 +22,12 @@ def test_nebius_vlm():
         'top_p': 0.9,
     }
 
-def test_response_with_url_image(self):
+def test_response_with_url_image():
     """Passes back an url of an image."""
     return "https://commons.wikimedia.org/wiki/File:Valentino_Rossi_2017.jpg#/media/File:Valentino_Rossi_2017.jpg"
         
-def test_response_with_local_image(self, image_path: str=None):
+def test_response_with_local_image(image_path: str=None):
     try:
-        image_path = image_path or '/home/agents/ProjectsWorkspace/FoundationClients/test_images/test_silvio.jpg'
         with Image.open(image_path) as image:
             pixels_width, pixels_height = image.size
             return image_path, pixels_width, pixels_height
@@ -49,6 +48,7 @@ if __name__ == "__main__":
              
         vlm = VLMClient(**model_parameters)
         task = 'Find all the faces in the image. If there are specific known, please label them with their names.'
+        test_image_path = os.path.join(os.path.dirname(__file__), 'test_images', 'test_silvio.jpg')   # adapt to your local path
         
         bb_prompt = """
         Task: {task}.
@@ -68,7 +68,9 @@ if __name__ == "__main__":
         }}
         """
 
-        image_path, pixels_width, pixels_height = test_response_with_local_image(None)
+        image_path, pixels_width, pixels_height = test_response_with_local_image(
+            test_image_path
+        )
 
         bb_prompt = bb_prompt.format(
             task=task, pixels_width=pixels_width, pixels_height=pixels_height
