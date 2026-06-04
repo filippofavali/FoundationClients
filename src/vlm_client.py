@@ -12,7 +12,7 @@ except ImportError:
 try:
     from .base_client import BaseFoundationClient
 except ImportError:
-    from base_client import BaseFoundationClient
+    from src.base_client import BaseFoundationClient
 
 class VLMClient(BaseFoundationClient):
     """

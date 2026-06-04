@@ -1,6 +1,10 @@
 import os
-from src.llm_client import LLMClient
-from src.vlm_client import VLMClient
+try:
+    from .src.llm_client import LLMClient
+    from .src.vlm_client import VLMClient
+except ImportError:
+    from src.llm_client import LLMClient
+    from src.vlm_client import VLMClient
 
 # Mock API keys for demonstration if not present
 if not os.getenv("GROQ_API_KEY"): 

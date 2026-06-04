@@ -1,5 +1,8 @@
 import os, sys
-from src.vlm_client import VLMClient
+try:
+    from .src.vlm_client import VLMClient
+except ImportError:
+    from src.vlm_client import VLMClient
 from traceback import format_exc
 from PIL import Image
 import json

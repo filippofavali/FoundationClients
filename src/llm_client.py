@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from .base_client import BaseFoundationClient
 except ImportError:
-    from base_client import BaseFoundationClient
+    from src.base_client import BaseFoundationClient
 try:
     from google import genai
 except ImportError:

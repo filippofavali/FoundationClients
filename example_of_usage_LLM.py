@@ -23,7 +23,10 @@ def test_nebius():
 
 if __name__ == "__main__":
 
-    from src.llm_client import LLMClient
+    try:
+        from .src.llm_client import LLMClient
+    except ImportError:
+        from src.llm_client import LLMClient
     
     use_nebius = False
     use_groq = True
