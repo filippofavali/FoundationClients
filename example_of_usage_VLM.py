@@ -1,4 +1,4 @@
-import os, sys
+import os
 try:
     from .src.vlm_client import VLMClient
 except ImportError:

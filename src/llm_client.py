@@ -1,8 +1,4 @@
-import os, sys
 from typing import Any, Dict, Optional
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 try:
     from .base_client import BaseFoundationClient
 except ImportError:

@@ -1,9 +1,6 @@
-import os, sys, base64, requests, base64
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import os, base64, base64
 from io import BytesIO
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict, Optional, Union
 from PIL import Image, ImageDraw
 try:    
     from google import genai
