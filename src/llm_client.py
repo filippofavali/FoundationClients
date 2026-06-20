@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 try:
     from .base_client import BaseFoundationClient
 except ImportError:
@@ -7,6 +7,10 @@ try:
     from google import genai
 except ImportError:
     genai = None
+try:
+    from pydantic import BaseModel
+except ImportError:
+    BaseModel = None
 
 
 class LLMClient(BaseFoundationClient):
@@ -47,7 +51,7 @@ class LLMClient(BaseFoundationClient):
         if hasattr(response, "usage"):
             self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
 
-    def _call_groq(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+    def _call_groq(self, user_message: Optional[str], system_message: str, force_json: bool, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -66,7 +70,15 @@ class LLMClient(BaseFoundationClient):
             "stream": stream,
             "max_completion_tokens": max_tokens,
         }
-        if force_json:
+        if force_json and forced_json_schema is not None:
+            params["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": forced_json_schema.__name__,
+                    "schema": forced_json_schema.model_json_schema()
+                }
+            }
+        elif force_json:
             params["response_format"] = {"type": "json_object"}
 
         response = self.client.chat.completions.create(**params)
@@ -204,9 +216,9 @@ class LLMClient(BaseFoundationClient):
     def _call_gemini(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
         raise NotImplementedError("LLMClient does not support Gemini yet due to differences in system message handling.")
 
-    def __call__(self, user_message: Optional[str] = None, system_message: str = "You are a helpful assistant.", force_json: bool = False, **kwargs) -> str:
+    def __call__(self, user_message: Optional[str] = None, system_message: str = "You are a helpful assistant.", force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         if self.provider == "groq":
-            return self._call_groq(user_message, system_message, force_json, **kwargs)
+            return self._call_groq(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
         if self.provider == "openai":
             return self._call_openai(user_message, system_message, force_json, **kwargs)
         if self.provider == "nebius":

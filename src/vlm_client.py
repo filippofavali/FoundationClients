@@ -1,6 +1,6 @@
 import os, base64, base64
 from io import BytesIO
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Type, Union
 from PIL import Image, ImageDraw
 try:    
     from google import genai
@@ -10,6 +10,10 @@ try:
     from .base_client import BaseFoundationClient
 except ImportError:
     from src.base_client import BaseFoundationClient
+try:
+    from pydantic import BaseModel
+except ImportError:
+    BaseModel = None
 
 class VLMClient(BaseFoundationClient):
     """
@@ -87,7 +91,7 @@ class VLMClient(BaseFoundationClient):
 
         return image
 
-    def _call_groq(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], **kwargs) -> str:
+    def _call_groq(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -111,30 +115,38 @@ class VLMClient(BaseFoundationClient):
         else:
             raise ValueError("Groq provider currently only supports image URLs, local image files, PIL images, or base64-encoded image strings.")
 
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=[
+        params = {
+            "model": self.model_name,
+            "messages": [
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "text",
-                            "text": text_prompt
-                        },
+                        {"type": "text", "text": text_prompt},
                         image_content,
                     ]
                 }
             ],
-            max_completion_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p
-        )
+            "max_completion_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+        }
+        if force_json and forced_json_schema is not None:
+            params["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": forced_json_schema.__name__,
+                    "schema": forced_json_schema.model_json_schema()
+                }
+            }
+        elif force_json:
+            params["response_format"] = {"type": "json_object"}
+
+        response = self.client.chat.completions.create(**params)
         if hasattr(response, 'usage'):
             self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
         return response.choices[0].message.content
 
-    def _call_openai(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], **kwargs) -> str:
-        force_json_response = kwargs.get("force_json_response", False)
+    def _call_openai(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -179,7 +191,7 @@ class VLMClient(BaseFoundationClient):
             if value is not None:
                 params[param_name] = value
 
-        if force_json_response and "response_format" not in params:
+        if force_json and "response_format" not in params:
             params["response_format"] = {"type": "json_object"}
 
         extra_body = self._get_call_parameter("extra_body", kwargs)
@@ -211,8 +223,8 @@ class VLMClient(BaseFoundationClient):
             self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
         return response.choices[0].message.content
 
-    def _call_nebius(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], **kwargs) -> str:
-        return self._call_openai(text_prompt, image, **kwargs)
+    def _call_nebius(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, **kwargs) -> str:
+        return self._call_openai(text_prompt, image, force_json=force_json, **kwargs)
 
     def _call_anthropic(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], **kwargs) -> str:
         raise NotImplementedError("VLMClient does not support Anthropic yet due to differences in image handling and API structure.")   
@@ -220,14 +232,14 @@ class VLMClient(BaseFoundationClient):
     def _call_gemini(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], **kwargs) -> str:
         raise NotImplementedError("VLMClient does not support Gemini yet due to differences in image handling and API structure.")
 
-    def __call__(self, text_prompt: Optional[str] = None, image: Union[str, bytes, Image.Image, None] = None, **kwargs) -> str:
+    def __call__(self, text_prompt: Optional[str] = None, image: Union[str, bytes, Image.Image, None] = None, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         """Sends a vision-language request to the model."""
         if self.provider == "groq":
-            return self._call_groq(text_prompt, image, **kwargs)
+            return self._call_groq(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
         elif self.provider == "openai":
-            return self._call_openai(text_prompt, image, **kwargs)
+            return self._call_openai(text_prompt, image, force_json=force_json, **kwargs)
         elif self.provider == "nebius":
-            return self._call_nebius(text_prompt, image, **kwargs)
+            return self._call_nebius(text_prompt, image, force_json=force_json, **kwargs)
         elif self.provider == "anthropic":
             return self._call_anthropic(text_prompt, image, **kwargs)
         elif self.provider == "gemini":

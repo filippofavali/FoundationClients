@@ -37,15 +37,11 @@ class ModelRegistry:
     
     # Groq Models
     GROQ_MODELS = {
-        "llama3.1-8b": "llama-3.1-8b-instant",
-        "llama3.3-70b": "llama-3.3-70b-versatile",
-        "llama4-maverick-17b": "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "moonshotai-kimik2-32b": "moonshotai/kimi-k2-instruct-0905",
-        "qwen3-32b": "qwen/qwen3-32b",
         "openai-oss-20b": "openai/gpt-oss-20b",
         "openai-oss-120b": "openai/gpt-oss-120b",
+        "qwen3-32b": "qwen/qwen3-32b",
         # vision enabled models
-        "llama4-scout-17b": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "qwen3.6-27b": "qwen/qwen3.6-27b",
     }
 
     # Nebius Models
