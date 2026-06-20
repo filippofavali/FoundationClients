@@ -105,15 +105,14 @@ class VLMClient(BaseFoundationClient):
                     "url": image
                 }
             }
-        elif isinstance(image, str) and os.path.isfile(image):
+        else:
+            # base64_image covers local files, bytes, PIL images, and raw base64 strings
             image_content = {
                 "type": "image_url",
                 "image_url": {
                     "url": f"data:image/jpeg;base64,{base64_image}"
                 }
             }
-        else:
-            raise ValueError("Groq provider currently only supports image URLs, local image files, PIL images, or base64-encoded image strings.")
 
         params = {
             "model": self.model_name,
@@ -138,8 +137,8 @@ class VLMClient(BaseFoundationClient):
                     "schema": forced_json_schema.model_json_schema()
                 }
             }
-        elif force_json:
-            params["response_format"] = {"type": "json_object"}
+        # Note: Groq VLMs (e.g. qwen 3.6) don't support response_format json_object.
+        # JSON output is enforced via the prompt instead.
 
         response = self.client.chat.completions.create(**params)
         if hasattr(response, 'usage'):
