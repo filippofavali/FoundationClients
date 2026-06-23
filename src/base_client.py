@@ -49,6 +49,7 @@ class ModelRegistry:
         'google-gemma-27b': 'google/gemma-3-27b-it',
         'nvidia-nemotron-30b': "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
         'nvidia-nemotron-120b': "nvidia/nemotron-3-super-120b-a12b",
+        'nvidia-cosmos3-33b': "nvidia/Cosmos3-Super-Reasoner",
         'kimi-k2.6': "moonshotai/Kimi-K2.6",
         'qwen3-embedding-8b': 'Qwen/Qwen3-Embedding-8B',
         # vision enabled models
