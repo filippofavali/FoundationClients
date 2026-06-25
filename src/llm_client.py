@@ -51,7 +51,7 @@ class LLMClient(BaseFoundationClient):
         if hasattr(response, "usage"):
             self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
 
-    def _call_groq(self, user_message: Optional[str], system_message: str, force_json: bool, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
+    def _call_groq(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -90,7 +90,7 @@ class LLMClient(BaseFoundationClient):
             return response
         return response.choices[0].message.content
 
-    def _call_openai(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+    def _call_openai(self, user_message: Optional[str], system_message: str, force_json: bool = False, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -150,7 +150,7 @@ class LLMClient(BaseFoundationClient):
             return response
         return response.choices[0].message.content
 
-    def _call_nebius(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+    def _call_nebius(self, user_message: Optional[str], system_message: str, force_json: bool = False, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -210,10 +210,10 @@ class LLMClient(BaseFoundationClient):
             return response
         return response.choices[0].message.content
 
-    def _call_anthropic(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+    def _call_anthropic(self, user_message: Optional[str], system_message: str, force_json: bool = False, **kwargs) -> str:
         raise NotImplementedError("LLMClient does not support Anthropic yet due to differences in system message handling.")
 
-    def _call_gemini(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+    def _call_gemini(self, user_message: Optional[str], system_message: str, force_json: bool = False, **kwargs) -> str:
         raise NotImplementedError("LLMClient does not support Gemini yet due to differences in system message handling.")
 
     def __call__(self, user_message: Optional[str] = None, system_message: str = "You are a helpful assistant.", force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
