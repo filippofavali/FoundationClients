@@ -71,11 +71,30 @@ class LLMClient(BaseFoundationClient):
             "max_completion_tokens": max_tokens,
         }
         if force_json and forced_json_schema is not None:
+            schema_dict = forced_json_schema.model_json_schema()
+            
+            def enforce_strict_mode(schema_node):
+                if isinstance(schema_node, dict):
+                    if (schema_node.get("type") == "object" or "properties" in schema_node) and "additionalProperties" not in schema_node:
+                        schema_node["additionalProperties"] = False
+                    
+                    if "properties" in schema_node:
+                        schema_node["required"] = list(schema_node["properties"].keys())
+                        
+                    for val in schema_node.values():
+                        enforce_strict_mode(val)
+                elif isinstance(schema_node, list):
+                    for item in schema_node:
+                        enforce_strict_mode(item)
+            
+            enforce_strict_mode(schema_dict)
+
             params["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": forced_json_schema.__name__,
-                    "schema": forced_json_schema.model_json_schema()
+                    'strict': True,
+                    "schema": schema_dict
                 }
             }
         elif force_json:
