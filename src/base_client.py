@@ -42,6 +42,7 @@ class ModelRegistry:
         "qwen3-32b": "qwen/qwen3-32b",
         # vision enabled models
         "qwen3.6-27b": "qwen/qwen3.6-27b",
+        "qwen3.8-27b": "qwen/Qwen3.8-27B"
     }
 
     # Nebius Models
@@ -53,6 +54,7 @@ class ModelRegistry:
         'qwen3-embedding-8b': 'Qwen/Qwen3-Embedding-8B',
         # vision enabled models
         'qwen3-2.5-70b': 'Qwen/Qwen2.5-VL-72B-Instruct',
+        "zAI-GLM-5.3": "zai-org/GLM-5.3-Flash",
     }
 
     # OpenAI Models
