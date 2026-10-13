@@ -40,6 +40,7 @@ class ModelRegistry:
         "openai-oss-20b": "openai/gpt-oss-20b",
         "openai-oss-120b": "openai/gpt-oss-120b",
         "qwen3-32b": "qwen/qwen3-32b",
+        "llama-3.3-70b": "llama-3.3-70b-versatile",
         # vision enabled models
         "qwen3.6-27b": "qwen/qwen3.6-27b",
     }
