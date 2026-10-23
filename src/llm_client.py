@@ -1,8 +1,8 @@
 from typing import Any, Dict, Optional, Type
 try:
-    from .base_client import BaseFoundationClient
+    from .base_client import BaseFoundationClient, OPENAI_REASONING_MODEL_PREFIXES, openai_json_schema_response_format
 except ImportError:
-    from src.base_client import BaseFoundationClient
+    from src.base_client import BaseFoundationClient, OPENAI_REASONING_MODEL_PREFIXES, openai_json_schema_response_format
 try:
     from google import genai
 except ImportError:
@@ -51,7 +51,7 @@ class LLMClient(BaseFoundationClient):
         if hasattr(response, "usage"):
             self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
 
-    def _call_groq(self, user_message: Optional[str], system_message: str, force_json: bool, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
+    def _call_groq(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -71,13 +71,7 @@ class LLMClient(BaseFoundationClient):
             "max_completion_tokens": max_tokens,
         }
         if force_json and forced_json_schema is not None:
-            params["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": forced_json_schema.__name__,
-                    "schema": forced_json_schema.model_json_schema()
-                }
-            }
+            params["response_format"] = openai_json_schema_response_format(forced_json_schema)
         elif force_json:
             params["response_format"] = {"type": "json_object"}
 
@@ -90,7 +84,7 @@ class LLMClient(BaseFoundationClient):
             return response
         return response.choices[0].message.content
 
-    def _call_openai(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+    def _call_openai_compatible(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, max_tokens_key: str = "max_tokens", **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -104,12 +98,17 @@ class LLMClient(BaseFoundationClient):
         params = {
             "model": self.model_name,
             "messages": messages,
-            "temperature": temperature,
-            "top_p": top_p,
             "stream": stream,
-            "max_tokens": max_tokens,
+            max_tokens_key: max_tokens,
         }
-        if force_json:
+        # OpenAI reasoning models (gpt-5, o-series) reject non-default sampling parameters.
+        if not (self.provider == "openai" and self.model_name.startswith(OPENAI_REASONING_MODEL_PREFIXES)):
+            params["temperature"] = temperature
+            params["top_p"] = top_p
+
+        if force_json and forced_json_schema is not None:
+            params["response_format"] = openai_json_schema_response_format(forced_json_schema)
+        elif force_json:
             params["response_format"] = {"type": "json_object"}
 
         for param_name in [
@@ -123,6 +122,8 @@ class LLMClient(BaseFoundationClient):
             "top_logprobs",
             "user",
             "response_format",
+            "reasoning_effort",
+            "seed",
         ]:
             value = self._get_call_parameter(param_name, kwargs)
             if value is not None:
@@ -150,81 +151,40 @@ class LLMClient(BaseFoundationClient):
             return response
         return response.choices[0].message.content
 
-    def _call_nebius(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
-        temperature = kwargs.get("temperature", self.temperature)
-        max_tokens = kwargs.get("max_tokens", self.max_tokens)
-        top_p = kwargs.get("top_p", self.top_p)
-        stream = kwargs.get("stream", self.stream)
-        full_content = kwargs.get("full_content", False)
-        messages = self._build_messages(user_message, system_message, kwargs.get("messages"))
+    def _call_openai(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
+        # max_tokens is deprecated on OpenAI and rejected by reasoning models: use max_completion_tokens.
+        return self._call_openai_compatible(user_message, system_message, force_json, forced_json_schema=forced_json_schema, max_tokens_key="max_completion_tokens", **kwargs)
 
-        if not messages:
-            raise ValueError("Either user_message or messages must be provided.")
+    def _call_nebius(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
+        return self._call_openai_compatible(user_message, system_message, force_json, forced_json_schema=forced_json_schema, max_tokens_key="max_tokens", **kwargs)
 
-        params = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": temperature,
-            "top_p": top_p,
-            "stream": stream,
-            "max_tokens": max_tokens,
-        }
-        if force_json:
-            params["response_format"] = {"type": "json_object"}
+    def _call_anthropic(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
+        messages = kwargs.pop("messages", None)
+        if messages is None:
+            if user_message is None:
+                raise ValueError("Either user_message or messages must be provided.")
+            messages = [{"role": "user", "content": user_message}]
+        else:
+            # Anthropic takes the system prompt as a top-level parameter, not as a message.
+            system_parts = [m["content"] for m in messages if m.get("role") == "system" and isinstance(m.get("content"), str)]
+            messages = [m for m in messages if m.get("role") != "system"]
+            if system_parts:
+                system_message = "\n\n".join(system_parts)
 
-        for param_name in [
-            "n",
-            "stream_options",
-            "stop",
-            "presence_penalty",
-            "frequency_penalty",
-            "logit_bias",
-            "logprobs",
-            "top_logprobs",
-            "user",
-            "response_format",
-        ]:
-            value = self._get_call_parameter(param_name, kwargs)
-            if value is not None:
-                params[param_name] = value
+        return self._call_anthropic_messages(messages, system_message, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
 
-        extra_body = self._get_call_parameter("extra_body", kwargs)
-        guided_json = self._get_call_parameter("guided_json", kwargs)
-        top_k = self._get_call_parameter("top_k", kwargs)
-        if extra_body is not None:
-            extra_body = dict(extra_body)
-        elif guided_json is not None or top_k is not None:
-            extra_body = {}
-        if guided_json is not None:
-            extra_body["guided_json"] = guided_json
-        if top_k is not None:
-            extra_body["top_k"] = top_k
-        if extra_body is not None:
-            params["extra_body"] = extra_body
-
-        response = self.client.chat.completions.create(**params)
-        if stream:
-            return self._handle_stream(response)
-        self._update_from_openai_usage(response)
-        if full_content:
-            return response
-        return response.choices[0].message.content
-
-    def _call_anthropic(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
-        raise NotImplementedError("LLMClient does not support Anthropic yet due to differences in system message handling.")
-
-    def _call_gemini(self, user_message: Optional[str], system_message: str, force_json: bool, **kwargs) -> str:
+    def _call_gemini(self, user_message: Optional[str], system_message: str, force_json: bool = False, **kwargs) -> str:
         raise NotImplementedError("LLMClient does not support Gemini yet due to differences in system message handling.")
 
     def __call__(self, user_message: Optional[str] = None, system_message: str = "You are a helpful assistant.", force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         if self.provider == "groq":
             return self._call_groq(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
         if self.provider == "openai":
-            return self._call_openai(user_message, system_message, force_json, **kwargs)
+            return self._call_openai(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
         if self.provider == "nebius":
-            return self._call_nebius(user_message, system_message, force_json, **kwargs)
+            return self._call_nebius(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
         if self.provider == "anthropic":
-            return self._call_anthropic(user_message, system_message, force_json, **kwargs)
+            return self._call_anthropic(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
         if self.provider == "gemini":
             return self._call_gemini(user_message, system_message, force_json, **kwargs)
         raise NotImplementedError(f"Provider {self.provider} not implemented.")
