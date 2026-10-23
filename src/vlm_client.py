@@ -1,4 +1,4 @@
-import os, base64, base64
+import os, base64
 from io import BytesIO
 from typing import Any, Dict, Optional, Type, Union
 from PIL import Image, ImageDraw
@@ -7,9 +7,9 @@ try:
 except ImportError:
     genai = None
 try:
-    from .base_client import BaseFoundationClient
+    from .base_client import BaseFoundationClient, OPENAI_REASONING_MODEL_PREFIXES, openai_json_schema_response_format
 except ImportError:
-    from src.base_client import BaseFoundationClient
+    from src.base_client import BaseFoundationClient, OPENAI_REASONING_MODEL_PREFIXES, openai_json_schema_response_format
 try:
     from pydantic import BaseModel
 except ImportError:
@@ -32,6 +32,8 @@ class VLMClient(BaseFoundationClient):
         """Encodes image to base64 string."""
         if isinstance(image_source, Image.Image):
             buffered = BytesIO()
+            if image_source.mode not in ("RGB", "L"):
+                image_source = image_source.convert("RGB")
             image_source.save(buffered, format="JPEG")
             return base64.b64encode(buffered.getvalue()).decode('utf-8')
         elif isinstance(image_source, bytes):
@@ -54,7 +56,7 @@ class VLMClient(BaseFoundationClient):
         if isinstance(image, str) and image.startswith("http"):
             image_url["url"] = image
         else:
-            mime_type = kwargs.get("image_mime_type", "image/jpeg")
+            mime_type = self._detect_mime_type(image, **kwargs)
             image_url["url"] = f"data:{mime_type};base64,{self._encode_image(image)}"
 
         image_detail = kwargs.get("image_detail")
@@ -65,6 +67,38 @@ class VLMClient(BaseFoundationClient):
             "type": "image_url",
             "image_url": image_url
         }
+
+    def _detect_mime_type(self, image: Union[str, bytes, Image.Image], **kwargs) -> str:
+        """Media type of the encoded image (PIL images are always re-encoded as JPEG)."""
+        if kwargs.get("image_mime_type"):
+            return kwargs["image_mime_type"]
+        if isinstance(image, Image.Image):
+            return "image/jpeg"
+        try:
+            if isinstance(image, bytes):
+                image_format = Image.open(BytesIO(image)).format
+            elif isinstance(image, str) and os.path.isfile(image):
+                with Image.open(image) as opened:
+                    image_format = opened.format
+            else:
+                image_format = None
+        except Exception:
+            image_format = None
+        return Image.MIME.get(image_format, "image/jpeg") if image_format else "image/jpeg"
+
+    def _build_anthropic_image_content(self, image: Union[str, bytes, Image.Image], **kwargs) -> Dict[str, Any]:
+        if image is None:
+            raise ValueError("image must be provided when messages are not passed.")
+
+        if isinstance(image, str) and image.startswith("http"):
+            source = {"type": "url", "url": image}
+        else:
+            source = {
+                "type": "base64",
+                "media_type": self._detect_mime_type(image, **kwargs),
+                "data": self._encode_image(image),
+            }
+        return {"type": "image", "source": source}
 
     def _draw_bbs(self, bbs: list, image: Union[str, Image.Image], print: bool = False):
         if isinstance(image, str):
@@ -130,13 +164,7 @@ class VLMClient(BaseFoundationClient):
             "top_p": top_p,
         }
         if force_json and forced_json_schema is not None:
-            params["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": forced_json_schema.__name__,
-                    "schema": forced_json_schema.model_json_schema()
-                }
-            }
+            params["response_format"] = openai_json_schema_response_format(forced_json_schema)
         # Note: Groq VLMs (e.g. qwen 3.6) don't support response_format json_object.
         # JSON output is enforced via the prompt instead.
 
@@ -145,7 +173,7 @@ class VLMClient(BaseFoundationClient):
             self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
         return response.choices[0].message.content
 
-    def _call_openai(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, **kwargs) -> str:
+    def _call_openai(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         temperature = kwargs.get("temperature", self.temperature)
         max_tokens = kwargs.get("max_tokens", self.max_tokens)
         top_p = kwargs.get("top_p", self.top_p)
@@ -168,11 +196,19 @@ class VLMClient(BaseFoundationClient):
         params = {
             "model": self.model_name,
             "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
             "stream": stream,
         }
+        if self.provider == "openai":
+            # max_tokens is deprecated on OpenAI and rejected by reasoning models (gpt-5, o-series),
+            # which also reject non-default sampling parameters.
+            params["max_completion_tokens"] = max_tokens
+            if not self.model_name.startswith(OPENAI_REASONING_MODEL_PREFIXES):
+                params["temperature"] = temperature
+                params["top_p"] = top_p
+        else:
+            params["max_tokens"] = max_tokens
+            params["temperature"] = temperature
+            params["top_p"] = top_p
 
         for param_name in [
             "n",
@@ -185,13 +221,18 @@ class VLMClient(BaseFoundationClient):
             "top_logprobs",
             "user",
             "response_format",
+            "reasoning_effort",
+            "seed",
         ]:
             value = self._get_call_parameter(param_name, kwargs)
             if value is not None:
                 params[param_name] = value
 
         if force_json and "response_format" not in params:
-            params["response_format"] = {"type": "json_object"}
+            if forced_json_schema is not None:
+                params["response_format"] = openai_json_schema_response_format(forced_json_schema)
+            else:
+                params["response_format"] = {"type": "json_object"}
 
         extra_body = self._get_call_parameter("extra_body", kwargs)
         guided_json = self._get_call_parameter("guided_json", kwargs)
@@ -222,11 +263,26 @@ class VLMClient(BaseFoundationClient):
             self._update_metrics(response.usage.prompt_tokens, response.usage.completion_tokens)
         return response.choices[0].message.content
 
-    def _call_nebius(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, **kwargs) -> str:
-        return self._call_openai(text_prompt, image, force_json=force_json, **kwargs)
+    def _call_nebius(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
+        return self._call_openai(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
 
-    def _call_anthropic(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], **kwargs) -> str:
-        raise NotImplementedError("VLMClient does not support Anthropic yet due to differences in image handling and API structure.")   
+    def _call_anthropic(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
+        system_message = kwargs.pop("system_message", None)
+        messages = kwargs.pop("messages", None)
+        if messages is None:
+            if text_prompt is None:
+                raise ValueError("text_prompt must be provided when messages are not passed.")
+            # Images before text is the recommended ordering for Claude.
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        self._build_anthropic_image_content(image, **kwargs),
+                        {"type": "text", "text": text_prompt},
+                    ],
+                }
+            ]
+        return self._call_anthropic_messages(messages, system_message, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
 
     def _call_gemini(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], **kwargs) -> str:
         raise NotImplementedError("VLMClient does not support Gemini yet due to differences in image handling and API structure.")
@@ -236,11 +292,11 @@ class VLMClient(BaseFoundationClient):
         if self.provider == "groq":
             return self._call_groq(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
         elif self.provider == "openai":
-            return self._call_openai(text_prompt, image, force_json=force_json, **kwargs)
+            return self._call_openai(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
         elif self.provider == "nebius":
-            return self._call_nebius(text_prompt, image, force_json=force_json, **kwargs)
+            return self._call_nebius(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
         elif self.provider == "anthropic":
-            return self._call_anthropic(text_prompt, image, **kwargs)
+            return self._call_anthropic(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
         elif self.provider == "gemini":
             return self._call_gemini(text_prompt, image, **kwargs)
         else:
