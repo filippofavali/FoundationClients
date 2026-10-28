@@ -144,8 +144,6 @@ PROVIDER_MODELS: Dict[str, Dict[str, str]] = {
     "inception": {
         # Mercury diffusion models: text only, no image input
         "mercury-3": "mercury-3",
-        "mercury-2.5": "mercury-2.5",
-        "mercury-2": "mercury-2",
     },
     "gemini": {
         "gemini-1.5-pro": "gemini-1.5-pro",
@@ -196,10 +194,6 @@ MODEL_RULES: Dict[str, List[ModelRule]] = {
             models=("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"),
             defaults={"fallbacks": "default"},
         ),
-    ],
-    "inception": [
-        # mercury-2 predates reasoning_effort.
-        ModelRule(models=("mercury-2",), unsupported=frozenset({"reasoning_effort"})),
     ],
 }
 

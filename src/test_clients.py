@@ -481,10 +481,6 @@ class TestFoundationClients(unittest.TestCase):
         self.assertNotIn("top_p", call_args)
         self.assertTrue(any("'top_p' is not supported" in str(c) for c in mock_print.call_args_list))
 
-    def test_inception_mercury_2_drops_reasoning_effort(self):
-        self.assertNotIn("reasoning_effort", base_client.resolve_parameters("inception", "mercury-2").accepted)
-        self.assertIn("reasoning_effort", base_client.resolve_parameters("inception", "mercury-2.5").accepted)
-
     def test_inception_vlm_not_supported(self):
         client = VLMClient(model_name="inception/mercury-3", api_key="k")
         with self.assertRaises(NotImplementedError):

@@ -142,7 +142,7 @@ Gemini clients are not implemented, and Inception has no VLM (no Mercury chat mo
 
 - **OpenAI / Nebius:** `n`, `stop`, `presence_penalty`, `frequency_penalty`, `logit_bias`, `logprobs`, `top_logprobs`, `user`, `seed`, `stream_options`, `response_format`, `reasoning_effort`. On Nebius only, `top_k` and `guided_json` go in `extra_body`.
 - **Groq:** `n`, `stop`, `seed`, `user`, `presence_penalty`, `frequency_penalty`, `response_format`, `service_tier`, `reasoning_effort`, `reasoning_format`, `include_reasoning`.
-- **Inception:** `stop`, `stream_options`, `response_format`, `reasoning_effort` (`"instant"` to `"high"`; not on `mercury-2`). `diffusing`, `realtime`, `reasoning_summary` and `reasoning_summary_wait` go in `extra_body`.
+- **Inception:** `stop`, `stream_options`, `response_format`, `reasoning_effort` (`"instant"` to `"high"`). `diffusing`, `realtime`, `reasoning_summary` and `reasoning_summary_wait` go in `extra_body`.
 - **Anthropic:** `effort` (`"low"` to `"max"`, the main quality/cost control on 5.x models), `stop_sequences`, `top_k`, `thinking`, `metadata`, `service_tier`, `output_config`, `fallbacks`.
 
 ## Sampling rules
