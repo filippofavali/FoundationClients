@@ -29,7 +29,7 @@ llm = LLMClient(model_name="anthropic/claude-opus-5.5", max_tokens=4096)
 vlm = VLMClient(model_name="openai/gpt-5-mini")
 ```
 
-- `model_name` is **required**, format `provider/model`. The model part is either an alias from `ModelRegistry` in [src/base_client.py](src/base_client.py) or any raw provider model ID (passed through unchanged).
+- `model_name` is **required**, format `provider/model`. The model part is either an alias from `PROVIDER_MODELS` in [src/base_client.py](src/base_client.py) or any raw provider model ID (passed through unchanged).
 - Constructor parameters are defaults for every call. Any of them can be overridden per call as a keyword argument.
 
 | Parameter | Default | Notes |

@@ -7,9 +7,9 @@ try:
 except ImportError:
     genai = None
 try:
-    from .base_client import BaseFoundationClient, OPENAI_REASONING_MODEL_PREFIXES, openai_json_schema_response_format
+    from .base_client import BaseFoundationClient, openai_json_schema_response_format
 except ImportError:
-    from src.base_client import BaseFoundationClient, OPENAI_REASONING_MODEL_PREFIXES, openai_json_schema_response_format
+    from src.base_client import BaseFoundationClient, openai_json_schema_response_format
 try:
     from pydantic import BaseModel
 except ImportError:
@@ -22,11 +22,6 @@ class VLMClient(BaseFoundationClient):
 
     def __init__(self, **model_parameters):
         super().__init__(**model_parameters)
-
-    def _get_call_parameter(self, name: str, kwargs: Dict[str, Any], default: Any = None) -> Any:
-        if name in kwargs:
-            return kwargs[name]
-        return self.model_parameters.get(name, default)
 
     def _encode_image(self, image_source: Union[str, bytes, Image.Image]) -> str:
         """Encodes image to base64 string."""
@@ -126,10 +121,6 @@ class VLMClient(BaseFoundationClient):
         return image
 
     def _call_groq(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
-        temperature = kwargs.get("temperature", self.temperature)
-        max_tokens = kwargs.get("max_tokens", self.max_tokens)
-        top_p = kwargs.get("top_p", self.top_p)
-
         base64_image = self._encode_image(image)
 
         if isinstance(image, str) and image.startswith("http"):
@@ -159,11 +150,9 @@ class VLMClient(BaseFoundationClient):
                     ]
                 }
             ],
-            "max_completion_tokens": max_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
+            **self._collect_parameters(kwargs),
         }
-        if force_json and forced_json_schema is not None:
+        if force_json and forced_json_schema is not None and "response_format" not in params:
             params["response_format"] = openai_json_schema_response_format(forced_json_schema)
         # Note: Groq VLMs (e.g. qwen 3.6) don't support response_format json_object.
         # JSON output is enforced via the prompt instead.
@@ -174,9 +163,6 @@ class VLMClient(BaseFoundationClient):
         return response.choices[0].message.content
 
     def _call_openai(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
-        temperature = kwargs.get("temperature", self.temperature)
-        max_tokens = kwargs.get("max_tokens", self.max_tokens)
-        top_p = kwargs.get("top_p", self.top_p)
         stream = kwargs.get("stream", self.stream)
 
         messages = kwargs.get("messages")
@@ -197,56 +183,14 @@ class VLMClient(BaseFoundationClient):
             "model": self.model_name,
             "messages": messages,
             "stream": stream,
+            **self._collect_parameters(kwargs),
         }
-        if self.provider == "openai":
-            # max_tokens is deprecated on OpenAI and rejected by reasoning models (gpt-5, o-series),
-            # which also reject non-default sampling parameters.
-            params["max_completion_tokens"] = max_tokens
-            if not self.model_name.startswith(OPENAI_REASONING_MODEL_PREFIXES):
-                params["temperature"] = temperature
-                params["top_p"] = top_p
-        else:
-            params["max_tokens"] = max_tokens
-            params["temperature"] = temperature
-            params["top_p"] = top_p
-
-        for param_name in [
-            "n",
-            "stream_options",
-            "stop",
-            "presence_penalty",
-            "frequency_penalty",
-            "logit_bias",
-            "logprobs",
-            "top_logprobs",
-            "user",
-            "response_format",
-            "reasoning_effort",
-            "seed",
-        ]:
-            value = self._get_call_parameter(param_name, kwargs)
-            if value is not None:
-                params[param_name] = value
 
         if force_json and "response_format" not in params:
             if forced_json_schema is not None:
                 params["response_format"] = openai_json_schema_response_format(forced_json_schema)
             else:
                 params["response_format"] = {"type": "json_object"}
-
-        extra_body = self._get_call_parameter("extra_body", kwargs)
-        guided_json = self._get_call_parameter("guided_json", kwargs)
-        top_k = self._get_call_parameter("top_k", kwargs)
-        if extra_body is not None:
-            extra_body = dict(extra_body)
-        elif guided_json is not None or top_k is not None:
-            extra_body = {}
-        if guided_json is not None:
-            extra_body["guided_json"] = guided_json
-        if top_k is not None:
-            extra_body["top_k"] = top_k
-        if extra_body is not None:
-            params["extra_body"] = extra_body
 
         response = self.client.chat.completions.create(**params)
         if stream:
