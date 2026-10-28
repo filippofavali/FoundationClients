@@ -34,6 +34,7 @@ MODELS = {
     "anthropic": ("anthropic", "claude-opus-5.5", "claude-opus-5.5"),
     "groq": ("groq", "openai-oss-120b", "qwen3.6-27b"),
     "nebius": ("nebius", "kimi-k2.6", "qwen3-2.5-70b"),
+    "inception": ("inception", "mercury-3", "mercury-3"),  # text only: VLM suite is skipped
     "google": ("gemini", "gemini-1.5-flash", "gemini-1.5-flash"),
 }
 

@@ -210,6 +210,9 @@ class VLMClient(BaseFoundationClient):
     def _call_nebius(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         return self._call_openai(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
 
+    def _call_inception(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], **kwargs) -> str:
+        raise NotImplementedError("VLMClient does not support Inception: no Mercury chat model accepts image input.")
+
     def _call_anthropic(self, text_prompt: Optional[str], image: Union[str, bytes, Image.Image, None], force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         system_message = kwargs.pop("system_message", None)
         messages = kwargs.pop("messages", None)
@@ -239,6 +242,8 @@ class VLMClient(BaseFoundationClient):
             return self._call_openai(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
         elif self.provider == "nebius":
             return self._call_nebius(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
+        elif self.provider == "inception":
+            return self._call_inception(text_prompt, image, **kwargs)
         elif self.provider == "anthropic":
             return self._call_anthropic(text_prompt, image, force_json=force_json, forced_json_schema=forced_json_schema, **kwargs)
         elif self.provider == "gemini":
