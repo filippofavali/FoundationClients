@@ -34,6 +34,7 @@ MODELS = {
     "anthropic": ("anthropic", "claude-opus-5.5", "claude-opus-5.5"),
     "groq": ("groq", "openai-oss-120b", "qwen3.6-27b"),
     "nebius": ("nebius", "kimi-k2.6", "qwen3-2.5-70b"),
+    "inception": ("inception", "mercury-3", "mercury-3"),  # text only: VLM suite is skipped
     "google": ("gemini", "gemini-1.5-flash", "gemini-1.5-flash"),
 }
 
@@ -43,6 +44,8 @@ COMMON_PARAMETERS = {
 
 PROVIDER_PARAMETERS = {
     "anthropic": {"effort": "low"},
+    # Lower temperature and keep Qwen3 reasoning out of the content, so strict JSON schemas validate.
+    "groq": {"temperature": 0.2, "reasoning_format": "parsed"},
 }
 
 TEST_IMAGES_DIR = os.path.join(os.path.basename(os.path.dirname(os.path.abspath(__file__))), "test_images")

@@ -1,6 +1,7 @@
 import os
 from typing import List, Dict, Union, Optional, Any
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 
 import pandas as pd
 from dotenv import load_dotenv  # type: ignore[reportMissingImports]
@@ -30,18 +31,196 @@ except ImportError:
 load_dotenv()
 
 
-# OpenAI reasoning models reject non-default temperature/top_p and the legacy max_tokens parameter.
-OPENAI_REASONING_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+# =====================================================================================
+# 1. PROVIDER PARAMETERS
+# Every request parameter a provider's API accepts. Anything outside these sets is dropped
+# (with a warning) before the request is sent.
+#   accepted              -> parameters forwarded to the API
+#   renamed               -> internal name -> name the API expects
+#   extra_body            -> accepted parameters sent inside `extra_body` (non-standard fields)
+#   send_default_sampling -> send the client's default temperature/top_p even when not set explicitly
+# =====================================================================================
+OPENAI_COMPATIBLE_PARAMETERS = frozenset({
+    "temperature", "top_p", "max_tokens", "n", "stop", "stream_options",
+    "presence_penalty", "frequency_penalty", "logit_bias", "logprobs", "top_logprobs",
+    "user", "seed", "response_format", "reasoning_effort",
+})
 
-# Anthropic models on which temperature/top_p/top_k were removed (non-default values return a 400).
-ANTHROPIC_NO_SAMPLING_MODEL_PREFIXES = (
-    "claude-fable-5", "claude-mythos-5", "claude-opus-5", "claude-sonnet-5",
-    "claude-opus-4-7", "claude-opus-4-8",
-)
 
-# Anthropic models that accept the server-side refusal fallback (`fallbacks: "default"`).
-ANTHROPIC_FALLBACK_MODELS = ("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
+@dataclass(frozen=True)
+class ProviderParameters:
+    accepted: frozenset
+    renamed: Dict[str, str] = field(default_factory=dict)
+    extra_body: frozenset = frozenset()
+    send_default_sampling: bool = True
 
+
+PROVIDER_PARAMETERS: Dict[str, ProviderParameters] = {
+    "openai": ProviderParameters(
+        accepted=OPENAI_COMPATIBLE_PARAMETERS,
+        renamed={"max_tokens": "max_completion_tokens"},
+    ),
+    "nebius": ProviderParameters(
+        accepted=OPENAI_COMPATIBLE_PARAMETERS | {"top_k", "guided_json"},
+        extra_body=frozenset({"top_k", "guided_json"}),
+    ),
+    "groq": ProviderParameters(
+        accepted=frozenset({
+            "temperature", "top_p", "max_tokens", "n", "stop", "seed", "user",
+            "presence_penalty", "frequency_penalty", "response_format", "service_tier",
+            "reasoning_effort", "reasoning_format", "include_reasoning",
+        }),
+        renamed={"max_tokens": "max_completion_tokens"},
+    ),
+    "anthropic": ProviderParameters(
+        accepted=frozenset({
+            "temperature", "top_p", "top_k", "max_tokens", "stop_sequences", "thinking",
+            "metadata", "service_tier", "output_config", "effort", "fallbacks",
+        }),
+        send_default_sampling=False,
+    ),
+    "inception": ProviderParameters(
+        # No top_p; temperature must be in [0.5, 1].
+        accepted=frozenset({
+            "temperature", "max_tokens", "stop", "stream_options", "response_format",
+            "reasoning_effort", "diffusing", "realtime", "reasoning_summary", "reasoning_summary_wait",
+        }),
+        renamed={"max_tokens": "max_completion_tokens"},
+        extra_body=frozenset({"diffusing", "realtime", "reasoning_summary", "reasoning_summary_wait"}),
+    ),
+    # Placeholder: Gemini is not wired into the clients yet.
+    "gemini": ProviderParameters(accepted=frozenset({"temperature", "top_p", "max_tokens"})),
+}
+
+# Arguments consumed by the clients themselves: never forwarded as-is, never warned about.
+CLIENT_PARAMETERS = frozenset({
+    "model_name", "api_key", "base_url", "stream", "full_content", "messages",
+    "system_message", "image_detail", "image_mime_type", "extra_body",
+})
+
+
+# =====================================================================================
+# 2. MODEL REGISTRY
+# Simplified/internal names -> official API model IDs, one block per provider.
+# =====================================================================================
+PROVIDER_MODELS: Dict[str, Dict[str, str]] = {
+    "groq": {
+        "openai-oss-20b": "openai/gpt-oss-20b",
+        "openai-oss-120b": "openai/gpt-oss-120b",
+        "qwen3-32b": "qwen/qwen3-32b",
+        "llama-3.3-70b": "llama-3.3-70b-versatile",
+        # vision enabled models
+        "qwen3.6-27b": "qwen/qwen3.6-27b",
+        "qwen3.8-27b": "qwen/Qwen3.8-27B",
+    },
+    "nebius": {
+        "google-gemma-27b": "google/gemma-3-27b-it",
+        "nvidia-nemotron-30b": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "nvidia-nemotron-120b": "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia-cosmos3-33b": "nvidia/Cosmos3-Super-Reasoner",
+        "kimi-k2.6": "moonshotai/Kimi-K2.6",
+        "qwen3-embedding-8b": "Qwen/Qwen3-Embedding-8B",
+        # vision enabled models
+        "qwen3-2.5-70b": "Qwen/Qwen2.5-VL-72B-Instruct",
+        "zAI-GLM-5.3": "zai-org/GLM-5.3-Flash",
+    },
+    "openai": {
+        # Vision is supported by gpt-5*, gpt-4.1* and gpt-4o*
+        "gpt-5": "gpt-5",
+        "gpt-5-mini": "gpt-5-mini",
+        "gpt-5-nano": "gpt-5-nano",
+        "gpt-4.1": "gpt-4.1",
+        "gpt-4.1-mini": "gpt-4.1-mini",
+        "gpt-4o": "gpt-4o",
+        "gpt-4o-mini": "gpt-4o-mini",
+    },
+    "anthropic": {
+        # All current models accept image input
+        "claude-fable-5.1": "claude-fable-5-1",
+        "claude-opus-5.5": "claude-opus-5-5",
+        "claude-sonnet-5.5": "claude-sonnet-5-5",
+        "claude-haiku-4.5": "claude-haiku-4-5",
+    },
+    "inception": {
+        # Mercury diffusion models: text only, no image input
+        "mercury-3": "mercury-3",
+    },
+    "gemini": {
+        "gemini-1.5-pro": "gemini-1.5-pro",
+        "gemini-1.5-flash": "gemini-1.5-flash",
+        "gemini-1.0-pro": "gemini-1.0-pro",
+    },
+}
+
+
+class ModelRegistry:
+    """Resolves internal model names to the provider's API model ID (see PROVIDER_MODELS)."""
+
+    @classmethod
+    def get_model_id(cls, provider: str, model_name: str) -> str:
+        return PROVIDER_MODELS.get(provider, {}).get(model_name, model_name)
+
+
+# =====================================================================================
+# 3. MODEL-SPECIFIC OVERRIDES
+# Exceptions for model families, applied on top of PROVIDER_PARAMETERS.
+#   prefixes    -> matched with model_id.startswith
+#   models      -> matched exactly
+#   unsupported -> removed from the provider's accepted parameters
+#   defaults    -> used when the caller does not set the parameter
+# =====================================================================================
+@dataclass(frozen=True)
+class ModelRule:
+    prefixes: tuple = ()
+    models: tuple = ()
+    unsupported: frozenset = frozenset()
+    defaults: Dict[str, Any] = field(default_factory=dict)
+
+
+MODEL_RULES: Dict[str, List[ModelRule]] = {
+    "openai": [
+        # Reasoning models reject non-default temperature/top_p.
+        ModelRule(prefixes=("gpt-5", "o1", "o3", "o4"), unsupported=frozenset({"temperature", "top_p"})),
+    ],
+    "anthropic": [
+        # temperature/top_p/top_k were removed on these models (non-default values return a 400).
+        ModelRule(
+            prefixes=("claude-fable-5", "claude-mythos-5", "claude-opus-5", "claude-sonnet-5",
+                      "claude-opus-4-7", "claude-opus-4-8"),
+            unsupported=frozenset({"temperature", "top_p", "top_k"}),
+        ),
+        # Server-side refusal fallback on by default; pass fallbacks=None to disable.
+        ModelRule(
+            models=("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"),
+            defaults={"fallbacks": "default"},
+        ),
+    ],
+}
+
+
+@dataclass(frozen=True)
+class ResolvedParameters:
+    """Provider parameters with the matching model rules applied."""
+    accepted: frozenset
+    renamed: Dict[str, str]
+    extra_body: frozenset
+    send_default_sampling: bool
+    defaults: Dict[str, Any]
+
+
+def resolve_parameters(provider: str, model_id: str) -> ResolvedParameters:
+    spec = PROVIDER_PARAMETERS.get(provider, ProviderParameters(accepted=frozenset()))
+    accepted, defaults = set(spec.accepted), {}
+    for rule in MODEL_RULES.get(provider, []):
+        if model_id in rule.models or model_id.startswith(rule.prefixes):
+            accepted -= rule.unsupported
+            defaults.update(rule.defaults)
+    return ResolvedParameters(frozenset(accepted), spec.renamed, spec.extra_body, spec.send_default_sampling, defaults)
+
+
+# =====================================================================================
+# 4. OTHER PROVIDER CONFIG
+# =====================================================================================
 # JSON schema keywords that Anthropic structured outputs do not support.
 ANTHROPIC_UNSUPPORTED_SCHEMA_KEYS = (
     "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
@@ -88,80 +267,6 @@ def openai_json_schema_response_format(schema_model) -> Dict[str, Any]:
     }
 
 
-class ModelRegistry:
-    """
-    Centralized registry for model names across providers.
-    Maps simplified/internal names to official API model IDs.
-    """
-    
-    # Groq Models
-    GROQ_MODELS = {
-        "openai-oss-20b": "openai/gpt-oss-20b",
-        "openai-oss-120b": "openai/gpt-oss-120b",
-        "qwen3-32b": "qwen/qwen3-32b",
-        "llama-3.3-70b": "llama-3.3-70b-versatile",
-        # vision enabled models
-        "qwen3.6-27b": "qwen/qwen3.6-27b",
-        "qwen3.8-27b": "qwen/Qwen3.8-27B"
-    }
-
-    # Nebius Models
-    NEBIUS_MODELS = {
-        'google-gemma-27b': 'google/gemma-3-27b-it',
-        'nvidia-nemotron-30b': "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
-        'nvidia-nemotron-120b': "nvidia/nemotron-3-super-120b-a12b",
-        'nvidia-cosmos3-33b': "nvidia/Cosmos3-Super-Reasoner",
-        'kimi-k2.6': "moonshotai/Kimi-K2.6",
-        'qwen3-embedding-8b': 'Qwen/Qwen3-Embedding-8B',
-        # vision enabled models
-        'qwen3-2.5-70b': 'Qwen/Qwen2.5-VL-72B-Instruct',
-        "zAI-GLM-5.3": "zai-org/GLM-5.3-Flash",
-    }
-
-    # OpenAI Models
-    OPENAI_MODELS = {
-        "gpt-5": "gpt-5",
-        "gpt-5-mini": "gpt-5-mini",
-        "gpt-5-nano": "gpt-5-nano",
-        "gpt-4.1": "gpt-4.1",
-        "gpt-4.1-mini": "gpt-4.1-mini",
-        "gpt-4o": "gpt-4o",
-        "gpt-4o-mini": "gpt-4o-mini",
-        # Vision is supported by gpt-5*, gpt-4.1* and gpt-4o*
-    }
-
-    # Anthropic Models (all current models accept image input)
-    ANTHROPIC_MODELS = {
-        "claude-fable-5.1": "claude-fable-5-1",
-        "claude-opus-5.5": "claude-opus-5-5",
-        "claude-sonnet-5.5": "claude-sonnet-5-5",
-        "claude-haiku-4.5": "claude-haiku-4-5",
-    }
-
-    # Gemini Models
-    GEMINI_MODELS = {
-        "gemini-1.5-pro": "gemini-1.5-pro",
-        "gemini-1.5-flash": "gemini-1.5-flash",
-        "gemini-1.0-pro": "gemini-1.0-pro",
-    }
-
-    @classmethod
-    def get_model_id(cls, provider: str, model_name: str) -> str:
-        """Resolves the internal model name to the provider's API model ID."""
-        if provider == "groq":
-            return cls.GROQ_MODELS.get(model_name, model_name)
-        elif provider == "openai":
-            return cls.OPENAI_MODELS.get(model_name, model_name)
-        elif provider == "nebius":
-            return cls.NEBIUS_MODELS.get(model_name, model_name)
-        elif provider == "anthropic":
-            return cls.ANTHROPIC_MODELS.get(model_name, model_name)
-        elif provider == "gemini":
-            return cls.GEMINI_MODELS.get(model_name, model_name)
-        else:
-            return model_name
-
-
 class BaseFoundationClient(ABC):
     """Base class for all foundation model clients."""
     
@@ -175,6 +280,8 @@ class BaseFoundationClient(ABC):
             raise ValueError(f"Model name '{full_model_name}' must be in format 'provider/model_name'")
 
         self.model_name = ModelRegistry.get_model_id(self.provider, self.raw_model_name)
+        self.parameters = resolve_parameters(self.provider, self.model_name)
+        self._warned_parameters = set()
         
         self.temperature = model_parameters.get("temperature", 0.7)
         self.max_tokens = model_parameters.get("max_tokens", 1024)
@@ -198,6 +305,10 @@ class BaseFoundationClient(ABC):
             if not OpenAI: raise ImportError("OpenAI SDK not installed.")
             base_url = self.base_url or "https://api.tokenfactory.nebius.com/v1/"
             return OpenAI(api_key=self.api_key, base_url=base_url)
+        elif self.provider == "inception":
+            if not OpenAI: raise ImportError("OpenAI SDK not installed.")
+            base_url = self.base_url or "https://api.inceptionlabs.ai/v1"
+            return OpenAI(api_key=self.api_key, base_url=base_url)
         elif self.provider == "anthropic":
             if not Anthropic: raise ImportError("Anthropic SDK not installed.")
             return Anthropic(api_key=self.api_key)
@@ -208,9 +319,41 @@ class BaseFoundationClient(ABC):
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
-    def _is_explicit_parameter(self, name: str, kwargs: Dict[str, Any]) -> bool:
-        """True when the caller set the parameter on the call or at client construction."""
-        return name in kwargs or name in self.model_parameters
+    def _collect_parameters(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Builds the provider request parameters from model rule defaults < client defaults
+        < constructor parameters < call kwargs, keeping only what the provider/model accepts.
+        Unsupported parameters set by the caller are dropped with a one-time warning.
+        """
+        spec = self.parameters
+        explicit = set(self.model_parameters) | set(kwargs)
+
+        merged = dict(spec.defaults)
+        merged["max_tokens"] = self.max_tokens
+        if spec.send_default_sampling:
+            merged.update(temperature=self.temperature, top_p=self.top_p)
+        merged.update(self.model_parameters)
+        merged.update(kwargs)
+
+        params = {}
+        extra_body = dict(merged.get("extra_body") or {})
+        for name, value in merged.items():
+            if name in CLIENT_PARAMETERS:
+                continue
+            if name not in spec.accepted:
+                if name in explicit and name not in self._warned_parameters:
+                    self._warned_parameters.add(name)
+                    print(f"[{self.__class__.__name__}] Warning: '{name}' is not supported by {self.provider}/{self.model_name} and was dropped.")
+                continue
+            if value is None:
+                continue
+            if name in spec.extra_body:
+                extra_body[name] = value
+            else:
+                params[spec.renamed.get(name, name)] = value
+        if extra_body:
+            params["extra_body"] = extra_body
+        return params
 
     def _call_anthropic_messages(self, messages: list, system_message: Optional[str], force_json: bool = False, forced_json_schema=None, **kwargs):
         """
@@ -223,7 +366,7 @@ class BaseFoundationClient(ABC):
         params = {
             "model": self.model_name,
             "messages": messages,
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            **self._collect_parameters(kwargs),
         }
 
         system_prompt = system_message or ""
@@ -233,23 +376,12 @@ class BaseFoundationClient(ABC):
         if system_prompt:
             params["system"] = system_prompt
 
-        # Sampling parameters: removed on the newest models, and older models accept only one of temperature/top_p.
-        if not self.model_name.startswith(ANTHROPIC_NO_SAMPLING_MODEL_PREFIXES):
-            if self._is_explicit_parameter("temperature", kwargs):
-                params["temperature"] = kwargs.get("temperature", self.temperature)
-            elif self._is_explicit_parameter("top_p", kwargs):
-                params["top_p"] = kwargs.get("top_p", self.top_p)
-            top_k = kwargs.get("top_k", self.model_parameters.get("top_k"))
-            if top_k is not None:
-                params["top_k"] = top_k
+        # Older models accept only one of temperature/top_p (unsupported models already dropped both).
+        if "temperature" in params:
+            params.pop("top_p", None)
 
-        for param_name in ["stop_sequences", "thinking", "metadata", "service_tier"]:
-            value = kwargs.get(param_name, self.model_parameters.get(param_name))
-            if value is not None:
-                params[param_name] = value
-
-        output_config = dict(kwargs.get("output_config", self.model_parameters.get("output_config")) or {})
-        effort = kwargs.get("effort", self.model_parameters.get("effort"))
+        output_config = dict(params.pop("output_config", None) or {})
+        effort = params.pop("effort", None)
         if effort is not None:
             output_config["effort"] = effort
         if force_json and forced_json_schema is not None:
@@ -260,13 +392,12 @@ class BaseFoundationClient(ABC):
         if output_config:
             params["output_config"] = output_config
 
-        # Server-side refusal fallback, on by default for the models that support it; pass fallbacks=None to disable.
-        default_fallbacks = "default" if self.model_name in ANTHROPIC_FALLBACK_MODELS else None
-        fallbacks = kwargs.get("fallbacks", self.model_parameters.get("fallbacks", default_fallbacks))
+        # Server-side refusal fallback: default comes from MODEL_RULES; pass fallbacks=None to disable.
+        fallbacks = params.pop("fallbacks", None)
         if fallbacks is not None:
             messages_api = self.client.beta.messages
             params["betas"] = ["server-side-fallback-2026-07-01" if fallbacks == "default" else "server-side-fallback-2026-06-01"]
-            params["extra_body"] = {"fallbacks": fallbacks}
+            params["extra_body"] = {**params.get("extra_body", {}), "fallbacks": fallbacks}
         else:
             messages_api = self.client.messages
 

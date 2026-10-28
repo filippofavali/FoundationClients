@@ -87,20 +87,21 @@ class TestFoundationClients(unittest.TestCase):
         self.genai_patcher.stop()
 
     def test_registry(self):
-        self.assertEqual(ModelRegistry.get_model_id("groq", "llama3.1-8b"), "llama-3.1-8b-instant")
+        self.assertEqual(ModelRegistry.get_model_id("groq", "llama-3.3-70b"), "llama-3.3-70b-versatile")
         self.assertEqual(ModelRegistry.get_model_id("openai", "gpt-4o"), "gpt-4o")
-        self.assertEqual(ModelRegistry.get_model_id("nebius", "llama3.1-70b"), "meta-llama/Meta-Llama-3.1-70B-Instruct")
-        self.assertEqual(ModelRegistry.get_model_id("nebius", "qwen2-vl-72b"), "Qwen/Qwen2-VL-72B-Instruct")
+        self.assertEqual(ModelRegistry.get_model_id("nebius", "kimi-k2.6"), "moonshotai/Kimi-K2.6")
+        self.assertEqual(ModelRegistry.get_model_id("nebius", "qwen3-2.5-70b"), "Qwen/Qwen2.5-VL-72B-Instruct")
+        self.assertEqual(ModelRegistry.get_model_id("anthropic", "claude-opus-5.5"), "claude-opus-5-5")
         self.assertEqual(ModelRegistry.get_model_id("unknown", "test-model"), "test-model")
 
     def test_llm_client_groq_init(self):
-        client = LLMClient(model_name="groq/llama3.1-8b", api_key="test_key")
+        client = LLMClient(model_name="groq/llama-3.3-70b", api_key="test_key")
         self.assertEqual(client.provider, "groq")
-        self.assertEqual(client.model_name, "llama-3.1-8b-instant")
+        self.assertEqual(client.model_name, "llama-3.3-70b-versatile")
         self.mock_groq.assert_called_with(api_key="test_key")
 
     def test_llm_client_call_groq(self):
-        client = LLMClient(model_name="groq/llama3.1-8b", api_key="test_key")
+        client = LLMClient(model_name="groq/llama-3.3-70b", api_key="test_key")
         
         # Mock response
         mock_chat = self.mock_groq_instance.chat.completions.create
@@ -119,16 +120,16 @@ class TestFoundationClients(unittest.TestCase):
              pass
 
     def test_llm_client_nebius_init(self):
-        client = LLMClient(model_name="nebius/llama3.1-70b", api_key="test_key")
+        client = LLMClient(model_name="nebius/kimi-k2.6", api_key="test_key")
         self.assertEqual(client.provider, "nebius")
-        self.assertEqual(client.model_name, "meta-llama/Meta-Llama-3.1-70B-Instruct")
+        self.assertEqual(client.model_name, "moonshotai/Kimi-K2.6")
         self.mock_openai.assert_called_with(
             api_key="test_key",
             base_url="https://api.tokenfactory.nebius.com/v1/"
         )
 
     def test_llm_client_call_nebius_params(self):
-        client = LLMClient(model_name="nebius/llama3.1-70b", api_key="test_key")
+        client = LLMClient(model_name="nebius/kimi-k2.6", api_key="test_key")
 
         mock_create = self.mock_openai_instance.chat.completions.create
         mock_message = MagicMock()
@@ -180,7 +181,7 @@ class TestFoundationClients(unittest.TestCase):
 
         self.assertEqual(response, "Nebius response")
         call_args = mock_create.call_args[1]
-        self.assertEqual(call_args["model"], "meta-llama/Meta-Llama-3.1-70B-Instruct")
+        self.assertEqual(call_args["model"], "moonshotai/Kimi-K2.6")
         self.assertEqual(call_args["messages"], messages)
         self.assertEqual(call_args["max_tokens"], 100)
         self.assertEqual(call_args["temperature"], 1)
@@ -218,7 +219,7 @@ class TestFoundationClients(unittest.TestCase):
         self.assertEqual(call_args['messages'][0]['content'][1]['type'], "image_url")
 
     def test_vlm_client_nebius_call(self):
-        client = VLMClient(model_name="nebius/qwen2-vl-72b", api_key="test_key")
+        client = VLMClient(model_name="nebius/qwen3-2.5-70b", api_key="test_key")
 
         mock_create = self.mock_openai_instance.chat.completions.create
         mock_message = MagicMock()
@@ -245,7 +246,7 @@ class TestFoundationClients(unittest.TestCase):
         )
 
         call_args = mock_create.call_args[1]
-        self.assertEqual(call_args["model"], "Qwen/Qwen2-VL-72B-Instruct")
+        self.assertEqual(call_args["model"], "Qwen/Qwen2.5-VL-72B-Instruct")
         self.assertEqual(call_args["max_tokens"], 300)
         self.assertEqual(call_args["temperature"], 0.2)
         self.assertEqual(call_args["top_p"], 0.9)
@@ -266,7 +267,7 @@ class TestFoundationClients(unittest.TestCase):
         )
 
     def test_llm_client_groq_structured_output(self):
-        client = LLMClient(model_name="groq/llama3.1-8b", api_key="test_key")
+        client = LLMClient(model_name="groq/llama-3.3-70b", api_key="test_key")
 
         mock_create = self.mock_groq_instance.chat.completions.create
         mock_message = MagicMock()
@@ -282,22 +283,12 @@ class TestFoundationClients(unittest.TestCase):
         )
 
         call_args = mock_create.call_args[1]
-        self.assertEqual(call_args["model"], "llama-3.1-8b-instant")
-        expected_schema = TestResponseModel.model_json_schema()
-        self.assertEqual(
-            call_args["response_format"],
-            {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "TestResponseModel",
-                    "schema": expected_schema
-                }
-            }
-        )
+        self.assertEqual(call_args["model"], "llama-3.3-70b-versatile")
+        self.assertEqual(call_args["response_format"], base_client.openai_json_schema_response_format(TestResponseModel))
         self.assertEqual(response, '{"name": "Alice", "age": 30}')
 
     def test_llm_client_groq_json_mode_only(self):
-        client = LLMClient(model_name="groq/llama3.1-8b", api_key="test_key")
+        client = LLMClient(model_name="groq/llama-3.3-70b", api_key="test_key")
 
         mock_create = self.mock_groq_instance.chat.completions.create
         mock_message = MagicMock()
@@ -316,7 +307,7 @@ class TestFoundationClients(unittest.TestCase):
         self.assertEqual(response, '{"key": "value"}')
 
     def test_vlm_client_groq_structured_output(self):
-        client = VLMClient(model_name="groq/llama4-scout-17b", api_key="test_key")
+        client = VLMClient(model_name="groq/qwen3.6-27b", api_key="test_key")
 
         mock_create = self.mock_groq_instance.chat.completions.create
         mock_message = MagicMock()
@@ -333,22 +324,12 @@ class TestFoundationClients(unittest.TestCase):
         )
 
         call_args = mock_create.call_args[1]
-        self.assertEqual(call_args["model"], "meta-llama/llama-4-scout-17b-16e-instruct")
-        expected_schema = TestResponseModel.model_json_schema()
-        self.assertEqual(
-            call_args["response_format"],
-            {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "TestResponseModel",
-                    "schema": expected_schema
-                }
-            }
-        )
+        self.assertEqual(call_args["model"], "qwen/qwen3.6-27b")
+        self.assertEqual(call_args["response_format"], base_client.openai_json_schema_response_format(TestResponseModel))
         self.assertEqual(response, '{"name": "Bob", "age": 25}')
 
     def test_vlm_client_groq_json_mode_only(self):
-        client = VLMClient(model_name="groq/llama4-scout-17b", api_key="test_key")
+        client = VLMClient(model_name="groq/qwen3.6-27b", api_key="test_key")
 
         mock_create = self.mock_groq_instance.chat.completions.create
         mock_message = MagicMock()
@@ -364,8 +345,146 @@ class TestFoundationClients(unittest.TestCase):
         )
 
         call_args = mock_create.call_args[1]
-        self.assertEqual(call_args["response_format"], {"type": "json_object"})
+        self.assertNotIn("response_format", call_args)
         self.assertEqual(response, '{"result": "ok"}')
+
+    # --- provider / model parameter filtering ---
+
+    def _mock_chat_response(self, mock_create, content="ok"):
+        mock_message = MagicMock()
+        mock_message.choices[0].message.content = content
+        mock_message.usage.prompt_tokens = 1
+        mock_message.usage.completion_tokens = 1
+        mock_create.return_value = mock_message
+
+    def _mock_anthropic_response(self, client):
+        response = MagicMock()
+        response.content = [MagicMock(type="text", text="ok")]
+        response.stop_reason = "end_turn"
+        client.client.messages.create.return_value = response
+        client.client.beta.messages.create.return_value = response
+
+    def test_resolve_parameters_applies_model_rules(self):
+        reasoning = base_client.resolve_parameters("openai", "gpt-5-mini")
+        self.assertNotIn("temperature", reasoning.accepted)
+        self.assertNotIn("top_p", reasoning.accepted)
+        self.assertIn("reasoning_effort", reasoning.accepted)
+        self.assertIn("temperature", base_client.resolve_parameters("openai", "gpt-4o").accepted)
+
+        opus = base_client.resolve_parameters("anthropic", "claude-opus-5-5")
+        self.assertNotIn("temperature", opus.accepted)
+        self.assertEqual(opus.defaults, {"fallbacks": "default"})
+        haiku = base_client.resolve_parameters("anthropic", "claude-haiku-4-5")
+        self.assertIn("temperature", haiku.accepted)
+        self.assertEqual(haiku.defaults, {})
+
+    def test_openai_reasoning_model_drops_sampling_with_single_warning(self):
+        client = LLMClient(model_name="openai/gpt-5", api_key="k", temperature=0.2)
+        mock_create = self.mock_openai_instance.chat.completions.create
+        self._mock_chat_response(mock_create)
+
+        with patch("builtins.print") as mock_print:
+            client("Hi", reasoning_effort="low")
+            client("Hi again")
+        call_args = mock_create.call_args[1]
+        self.assertNotIn("temperature", call_args)
+        self.assertNotIn("top_p", call_args)
+        self.assertNotIn("max_tokens", call_args)
+        self.assertEqual(call_args["max_completion_tokens"], 1024)
+        warnings = [c for c in mock_print.call_args_list if "'temperature' is not supported" in str(c)]
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(mock_create.call_count, 2)
+
+    def test_openai_does_not_forward_nebius_extra_body_fields(self):
+        client = LLMClient(model_name="openai/gpt-4o", api_key="k")
+        mock_create = self.mock_openai_instance.chat.completions.create
+        self._mock_chat_response(mock_create)
+
+        with patch("builtins.print"):
+            client("Hi", top_k=40)
+        call_args = mock_create.call_args[1]
+        self.assertNotIn("extra_body", call_args)
+        self.assertNotIn("top_k", call_args)
+        self.assertEqual(call_args["temperature"], 0.7)
+
+    def test_groq_forwards_reasoning_effort_and_drops_unsupported(self):
+        client = LLMClient(model_name="groq/openai-oss-20b", api_key="k")
+        mock_create = self.mock_groq_instance.chat.completions.create
+        self._mock_chat_response(mock_create)
+
+        with patch("builtins.print") as mock_print:
+            client("Hi", reasoning_effort="high", logit_bias={"1": 2})
+        call_args = mock_create.call_args[1]
+        self.assertEqual(call_args["reasoning_effort"], "high")
+        self.assertEqual(call_args["max_completion_tokens"], 1024)
+        self.assertNotIn("logit_bias", call_args)
+        self.assertTrue(any("'logit_bias' is not supported" in str(c) for c in mock_print.call_args_list))
+
+    def test_anthropic_new_model_drops_sampling_and_enables_fallbacks(self):
+        client = LLMClient(model_name="anthropic/claude-opus-5.5", api_key="k")
+        self._mock_anthropic_response(client)
+
+        with patch("builtins.print"):
+            client("Hi", temperature=0.3, effort="low")
+        call_args = client.client.beta.messages.create.call_args[1]
+        self.assertNotIn("temperature", call_args)
+        self.assertEqual(call_args["output_config"], {"effort": "low"})
+        self.assertEqual(call_args["extra_body"], {"fallbacks": "default"})
+        self.assertEqual(call_args["max_tokens"], 1024)
+        self.assertNotIn("effort", call_args)
+        self.assertNotIn("fallbacks", call_args)
+
+    def test_anthropic_fallbacks_none_disables_beta(self):
+        client = LLMClient(model_name="anthropic/claude-opus-5.5", api_key="k")
+        self._mock_anthropic_response(client)
+
+        client("Hi", fallbacks=None)
+        client.client.messages.create.assert_called_once()
+        client.client.beta.messages.create.assert_not_called()
+
+    def test_anthropic_older_model_sends_only_explicit_sampling(self):
+        client = LLMClient(model_name="anthropic/claude-haiku-4.5", api_key="k")
+        self._mock_anthropic_response(client)
+
+        client("Hi")
+        call_args = client.client.messages.create.call_args[1]
+        self.assertNotIn("temperature", call_args)
+        self.assertNotIn("top_p", call_args)
+
+        client("Hi", temperature=0.3, top_p=0.9, top_k=5)
+        call_args = client.client.messages.create.call_args[1]
+        self.assertEqual(call_args["temperature"], 0.3)
+        self.assertNotIn("top_p", call_args)
+        self.assertEqual(call_args["top_k"], 5)
+
+
+    def test_inception_init_and_registry(self):
+        client = LLMClient(model_name="inception/mercury-3", api_key="k")
+        self.assertEqual(client.model_name, "mercury-3")
+        self.mock_openai.assert_called_with(api_key="k", base_url="https://api.inceptionlabs.ai/v1")
+
+    def test_inception_parameters(self):
+        client = LLMClient(model_name="inception/mercury-3", api_key="k", max_tokens=2048)
+        mock_create = self.mock_openai_instance.chat.completions.create
+        self._mock_chat_response(mock_create, '{"name": "A", "age": 1}')
+
+        with patch("builtins.print") as mock_print:
+            client("Hi", top_p=0.9, reasoning_effort="instant", realtime=True,
+                   force_json=True, forced_json_schema=TestResponseModel)
+        call_args = mock_create.call_args[1]
+        self.assertEqual(call_args["model"], "mercury-3")
+        self.assertEqual(call_args["max_completion_tokens"], 2048)
+        self.assertEqual(call_args["temperature"], 0.7)
+        self.assertEqual(call_args["reasoning_effort"], "instant")
+        self.assertEqual(call_args["extra_body"], {"realtime": True})
+        self.assertEqual(call_args["response_format"], base_client.openai_json_schema_response_format(TestResponseModel))
+        self.assertNotIn("top_p", call_args)
+        self.assertTrue(any("'top_p' is not supported" in str(c) for c in mock_print.call_args_list))
+
+    def test_inception_vlm_not_supported(self):
+        client = VLMClient(model_name="inception/mercury-3", api_key="k")
+        with self.assertRaises(NotImplementedError):
+            client("Describe", "https://example.com/image.jpg")
 
 
 if __name__ == '__main__':
