@@ -458,5 +458,34 @@ class TestFoundationClients(unittest.TestCase):
         self.assertEqual(call_args["top_k"], 5)
 
 
+    def test_inception_init_and_registry(self):
+        client = LLMClient(model_name="inception/mercury-3", api_key="k")
+        self.assertEqual(client.model_name, "mercury-3")
+        self.mock_openai.assert_called_with(api_key="k", base_url="https://api.inceptionlabs.ai/v1")
+
+    def test_inception_parameters(self):
+        client = LLMClient(model_name="inception/mercury-3", api_key="k", max_tokens=2048)
+        mock_create = self.mock_openai_instance.chat.completions.create
+        self._mock_chat_response(mock_create, '{"name": "A", "age": 1}')
+
+        with patch("builtins.print") as mock_print:
+            client("Hi", top_p=0.9, reasoning_effort="instant", realtime=True,
+                   force_json=True, forced_json_schema=TestResponseModel)
+        call_args = mock_create.call_args[1]
+        self.assertEqual(call_args["model"], "mercury-3")
+        self.assertEqual(call_args["max_completion_tokens"], 2048)
+        self.assertEqual(call_args["temperature"], 0.7)
+        self.assertEqual(call_args["reasoning_effort"], "instant")
+        self.assertEqual(call_args["extra_body"], {"realtime": True})
+        self.assertEqual(call_args["response_format"], base_client.openai_json_schema_response_format(TestResponseModel))
+        self.assertNotIn("top_p", call_args)
+        self.assertTrue(any("'top_p' is not supported" in str(c) for c in mock_print.call_args_list))
+
+    def test_inception_vlm_not_supported(self):
+        client = VLMClient(model_name="inception/mercury-3", api_key="k")
+        with self.assertRaises(NotImplementedError):
+            client("Describe", "https://example.com/image.jpg")
+
+
 if __name__ == '__main__':
     unittest.main()

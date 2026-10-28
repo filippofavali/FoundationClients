@@ -79,6 +79,15 @@ PROVIDER_PARAMETERS: Dict[str, ProviderParameters] = {
         }),
         send_default_sampling=False,
     ),
+    "inception": ProviderParameters(
+        # No top_p; temperature must be in [0.5, 1].
+        accepted=frozenset({
+            "temperature", "max_tokens", "stop", "stream_options", "response_format",
+            "reasoning_effort", "diffusing", "realtime", "reasoning_summary", "reasoning_summary_wait",
+        }),
+        renamed={"max_tokens": "max_completion_tokens"},
+        extra_body=frozenset({"diffusing", "realtime", "reasoning_summary", "reasoning_summary_wait"}),
+    ),
     # Placeholder: Gemini is not wired into the clients yet.
     "gemini": ProviderParameters(accepted=frozenset({"temperature", "top_p", "max_tokens"})),
 }
@@ -131,6 +140,10 @@ PROVIDER_MODELS: Dict[str, Dict[str, str]] = {
         "claude-opus-5.5": "claude-opus-5-5",
         "claude-sonnet-5.5": "claude-sonnet-5-5",
         "claude-haiku-4.5": "claude-haiku-4-5",
+    },
+    "inception": {
+        # Mercury diffusion models: text only, no image input
+        "mercury-3": "mercury-3",
     },
     "gemini": {
         "gemini-1.5-pro": "gemini-1.5-pro",
@@ -291,6 +304,10 @@ class BaseFoundationClient(ABC):
         elif self.provider == "nebius":
             if not OpenAI: raise ImportError("OpenAI SDK not installed.")
             base_url = self.base_url or "https://api.tokenfactory.nebius.com/v1/"
+            return OpenAI(api_key=self.api_key, base_url=base_url)
+        elif self.provider == "inception":
+            if not OpenAI: raise ImportError("OpenAI SDK not installed.")
+            base_url = self.base_url or "https://api.inceptionlabs.ai/v1"
             return OpenAI(api_key=self.api_key, base_url=base_url)
         elif self.provider == "anthropic":
             if not Anthropic: raise ImportError("Anthropic SDK not installed.")

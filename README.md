@@ -1,6 +1,6 @@
 # FoundationClients
 
-One interface for text (`LLMClient`) and vision (`VLMClient`) calls across Groq, Nebius, OpenAI and Anthropic.
+One interface for text (`LLMClient`) and vision (`VLMClient`) calls across Groq, Nebius, OpenAI, Anthropic and Inception (Mercury, text only).
 
 ## Setup
 
@@ -15,9 +15,10 @@ GROQ_API_KEY=...
 NEBIUS_API_KEY=...
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
+INCEPTION_API_KEY=...
 ```
 
-`api_key=` / `base_url=` passed to the constructor override the env (`NEBIUS_BASE_URL` defaults to `https://api.tokenfactory.nebius.com/v1/`).
+`api_key=` / `base_url=` passed to the constructor override the env (`NEBIUS_BASE_URL` defaults to `https://api.tokenfactory.nebius.com/v1/`, `INCEPTION_BASE_URL` to `https://api.inceptionlabs.ai/v1`).
 
 ## Creating a client
 
@@ -121,29 +122,33 @@ How it maps per provider:
 | Groq | `response_format: json_schema` (strict) | LLM: `json_object`. VLM: **ignored** (put the JSON format in the prompt) |
 | Nebius | `response_format: json_schema` (strict) | `json_object` |
 | OpenAI | `response_format: json_schema` (strict) | `json_object` (the prompt must mention "JSON") |
+| Inception | `response_format: json_schema` (strict) | `json_object` |
 | Anthropic | `output_config.format: json_schema` | A "respond only with JSON" instruction is appended to the system prompt |
 
-`response_format=` passed explicitly (OpenAI/Nebius) takes precedence over `force_json`.
+`response_format=` passed explicitly takes precedence over `force_json`.
 
 ## Capability matrix
 
-| | Groq | Nebius | OpenAI | Anthropic |
-|---|---|---|---|---|
-| LLM `messages=` | ✓ | ✓ | ✓ | ✓ |
-| LLM `stream` / `full_content` | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ |
-| VLM `messages=` | ✗ | ✓ | ✓ | ✓ |
-| VLM `stream` / `full_content` | ✗ / ✗ | ✓ / ✗ | ✓ / ✗ | ✓ / ✓ |
+| | Groq | Nebius | OpenAI | Anthropic | Inception |
+|---|---|---|---|---|---|
+| LLM `messages=` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| LLM `stream` / `full_content` | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ |
+| VLM `messages=` | ✗ | ✓ | ✓ | ✓ | ✗ |
+| VLM `stream` / `full_content` | ✗ / ✗ | ✓ / ✗ | ✓ / ✗ | ✓ / ✓ | ✗ / ✗ |
 
-Gemini clients are not implemented (`NotImplementedError`).
+Gemini clients are not implemented, and Inception has no VLM (no Mercury chat model accepts images): both raise `NotImplementedError`.
 
-**Extra kwargs** (on the constructor or per call). Groq passes none beyond the common parameters.
+**Extra kwargs** (on the constructor or per call). The full per-provider list is `PROVIDER_PARAMETERS` in [src/base_client.py](src/base_client.py); anything else is dropped with a one-time warning.
 
-- **OpenAI / Nebius:** `n`, `stop`, `presence_penalty`, `frequency_penalty`, `logit_bias`, `logprobs`, `top_logprobs`, `user`, `seed`, `stream_options`, `response_format`, `reasoning_effort`. `top_k`, `guided_json` and `extra_body` go in `extra_body` (useful on Nebius/vLLM).
+- **OpenAI / Nebius:** `n`, `stop`, `presence_penalty`, `frequency_penalty`, `logit_bias`, `logprobs`, `top_logprobs`, `user`, `seed`, `stream_options`, `response_format`, `reasoning_effort`. On Nebius only, `top_k` and `guided_json` go in `extra_body`.
+- **Groq:** `n`, `stop`, `seed`, `user`, `presence_penalty`, `frequency_penalty`, `response_format`, `service_tier`, `reasoning_effort`, `reasoning_format`, `include_reasoning`.
+- **Inception:** `stop`, `stream_options`, `response_format`, `reasoning_effort` (`"instant"` to `"high"`). `diffusing`, `realtime`, `reasoning_summary` and `reasoning_summary_wait` go in `extra_body`.
 - **Anthropic:** `effort` (`"low"` to `"max"`, the main quality/cost control on 5.x models), `stop_sequences`, `top_k`, `thinking`, `metadata`, `service_tier`, `output_config`, `fallbacks`.
 
 ## Sampling rules
 
 - **Groq / Nebius:** `temperature` and `top_p` are always sent.
+- **Inception:** only `temperature` is sent (must be in 0.5–1); `top_p` is not supported. `max_tokens` is sent as `max_completion_tokens`.
 - **OpenAI:** sent for gpt-4o/gpt-4.1. **Dropped** for reasoning models (`gpt-5*`, `o1`/`o3`/`o4`), which reject them. Use `reasoning_effort` there. OpenAI uses `max_completion_tokens`, set from `max_tokens`.
 - **Anthropic:** dropped for Opus/Sonnet 5.x, Fable and Opus 4.7/4.8, which reject them. Use `effort` there. On older models (e.g. Haiku 4.5) only the one **you set explicitly** is sent: `temperature` if given, otherwise `top_p`.
 
@@ -170,8 +175,8 @@ python example_of_usage.py --llm --vlm --anthropic --groq
 ```
 
 - **Suites:** `--llm` (open question, structured email classification) and `--vlm` (image question, structured scene description, face bounding boxes, robot grasp affordances).
-- **Providers:** `--openai --anthropic --groq --nebius --google`. Each selected suite runs on each selected provider. No suite flag runs both, and no provider flag runs all five.
+- **Providers:** `--openai --anthropic --groq --nebius --inception --google`. Each selected suite runs on each selected provider. No suite flag runs both, and no provider flag runs all of them.
 - **Models:** set per provider in `MODELS` at the top of the script.
 - **`--show`:** opens the images annotated with boxes and grasp points.
-- **Skipped tests:** a provider without a key, Google (not implemented), and the affordance test until `test_images/robotic_affordances.jpg` exists.
+- **Skipped tests:** a provider without a key, Google (not implemented), the Inception VLM suite (text only), and the affordance test until `test_images/robotic_affordances.jpg` exists.
 - **Output:** a PASS/FAIL/SKIP summary with time and tokens per test. The exit code is non-zero if anything failed.

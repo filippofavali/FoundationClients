@@ -90,6 +90,9 @@ class LLMClient(BaseFoundationClient):
     def _call_nebius(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         return self._call_openai_compatible(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
 
+    def _call_inception(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
+        return self._call_openai_compatible(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
+
     def _call_anthropic(self, user_message: Optional[str], system_message: str, force_json: bool = False, forced_json_schema: Optional[Type['BaseModel']] = None, **kwargs) -> str:
         messages = kwargs.pop("messages", None)
         if messages is None:
@@ -115,6 +118,8 @@ class LLMClient(BaseFoundationClient):
             return self._call_openai(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
         if self.provider == "nebius":
             return self._call_nebius(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
+        if self.provider == "inception":
+            return self._call_inception(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
         if self.provider == "anthropic":
             return self._call_anthropic(user_message, system_message, force_json, forced_json_schema=forced_json_schema, **kwargs)
         if self.provider == "gemini":
